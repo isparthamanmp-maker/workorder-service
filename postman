@@ -1,0 +1,392 @@
+{
+  "info": {
+    "name": "WorkOrders API Collection",
+    "description": "Postman collection for WorkOrders API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "71a25e44-aa7c-49f6-9e27-9675eca38e52"
+  },
+  "item": [
+    {
+      "name": "WorkOrders Endpoints",
+      "description": "Endpoints for work_orders",
+      "item": [
+        {
+          "name": "Create a new work_orders record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/work_orderss/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "work_orderss",
+                ""
+              ]
+            },
+            "description": "Create a new work_orders record",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example Name\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get all work_orderss with pagination and search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/work_orderss/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "work_orderss",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "skip",
+                  "value": "0",
+                  "description": "Number of records to skip"
+                },
+                {
+                  "key": "limit",
+                  "value": "100",
+                  "description": "Number of records to return"
+                },
+                {
+                  "key": "search",
+                  "value": "example",
+                  "description": "Search term"
+                }
+              ]
+            },
+            "description": "Get all work_orderss with pagination and search"
+          },
+          "response": []
+        },
+        {
+          "name": "Get all work_orderss with pagination and search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "work_orderss",
+                "{work_orders_id}"
+              ],
+              "variable": [
+                {
+                  "key": "work_orders_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Get all work_orderss with pagination and search"
+          },
+          "response": []
+        },
+        {
+          "name": "Update work_orders",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "work_orderss",
+                "{work_orders_id}"
+              ],
+              "variable": [
+                {
+                  "key": "work_orders_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Update work_orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Name\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete work_orders",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "work_orderss",
+                "{work_orders_id}"
+              ],
+              "variable": [
+                {
+                  "key": "work_orders_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Delete work_orders"
+          },
+          "response": []
+        },
+        {
+          "name": "Create a new work_orders record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/work_orderss/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "work_orderss",
+                ""
+              ]
+            },
+            "description": "Create a new work_orders record",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Example Name\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get all work_orderss with pagination and search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/work_orderss/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "work_orderss",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "skip",
+                  "value": "0",
+                  "description": "Number of records to skip"
+                },
+                {
+                  "key": "limit",
+                  "value": "100",
+                  "description": "Number of records to return"
+                },
+                {
+                  "key": "search",
+                  "value": "example",
+                  "description": "Search term"
+                }
+              ]
+            },
+            "description": "Get all work_orderss with pagination and search"
+          },
+          "response": []
+        },
+        {
+          "name": "Get all work_orderss with pagination and search",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "work_orderss",
+                "{work_orders_id}"
+              ],
+              "variable": [
+                {
+                  "key": "work_orders_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Get all work_orderss with pagination and search"
+          },
+          "response": []
+        },
+        {
+          "name": "Update work_orders",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "work_orderss",
+                "{work_orders_id}"
+              ],
+              "variable": [
+                {
+                  "key": "work_orders_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Update work_orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Name\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete work_orders",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "work_orderss",
+                "{work_orders_id}"
+              ],
+              "variable": [
+                {
+                  "key": "work_orders_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Delete work_orders"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "noauth"
+  }
+}
