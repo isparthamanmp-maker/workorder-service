@@ -4,7 +4,8 @@ import uvicorn
 from contextlib import asynccontextmanager
 
 from src.config.database import db_manager
-from src.api.routes import router as api_router
+from src.api.routes.user_routes import router as api_router
+from src.api.routes.work_order_routes import router as work_order_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -47,6 +48,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(api_router)
+app.include_router(work_order_router)
 
 # Health check endpoint
 @app.get("/health")
@@ -71,7 +73,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "src.main:app",
         host="0.0.0.0",
-        port=5000,
+        port=6001,
         reload=False,
         log_level="info"
     )
