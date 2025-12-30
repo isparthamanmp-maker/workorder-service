@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # SQL Server
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    environment:
+      SA_PASSWORD: "YourStrongPassword123"
+      ACCEPT_EULA: "Y"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+
+  # MySQL
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: "rootpassword"
+      MYSQL_DATABASE: "microservice_db"
+      MYSQL_USER: "microservice"
+      MYSQL_PASSWORD: "microservice123"
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  # PostgreSQL
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: "microservice_db"
+      POSTGRES_USER: "microservice"
+      POSTGRES_PASSWORD: "microservice123"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Application
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_ENGINE=sqlserver
+      - DB_HOST=sqlserver
+      - DB_PORT=1433
+      - DB_NAME=microservice_db
+      - DB_USER=sa
+      - DB_PASSWORD=YourStrongPassword123
+      - DEBUG=true
+    depends_on:
+      - sqlserver
+    volumes:
+      - ./src:/app/src
+    command: python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  sqlserver_data:
+  mysql_data:
+  postgres_data:
