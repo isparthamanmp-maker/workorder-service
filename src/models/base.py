@@ -1,5 +1,5 @@
 # src/models/base.py
-from sqlalchemy import Column, Integer, String, Text, Date, DateTime, SmallInteger, Numeric, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Date, DateTime, SmallInteger, Numeric, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -41,6 +41,21 @@ class WorkOrderVendors(Base):
         return f"<WorkOrderVendors(id={self.id}, vendor_name='{self.vendor_name}')>"
 
 
+class SupportingDocuments(Base):
+    """supporting_documents model"""
+    __tablename__ = "supporting_documents"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False)
+    document_type = Column(String(100), nullable=False)
+    has_document = Column(Boolean, default=False)
+    
+    # FIXED: Point to WorkOrders, not self, and match the back_populates name
+    work_order = relationship("WorkOrders", back_populates="supporting_documents")
+    
+    def __repr__(self):
+        return f"<SupportingDocuments(id={self.id}, document_type='{self.document_type}', has_document={self.has_document})>"
+
 # Define WorkOrders LAST, now it can reference the already-defined classes
 class WorkOrders(Base):
     """work_orders model"""
@@ -73,7 +88,9 @@ class WorkOrders(Base):
     # Now we can reference the already-defined classes
     work_items = relationship("WorkOrderItems", back_populates="work_order", cascade="all, delete-orphan")
     vendors = relationship("WorkOrderVendors", back_populates="work_order", cascade="all, delete-orphan")
-    
+    # FIXED: Now matches SupportingDocuments.work_order
+    supporting_documents = relationship("SupportingDocuments", back_populates="work_order", cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<WorkOrders(id={self.id}, document_number='{self.document_number}')>"
 

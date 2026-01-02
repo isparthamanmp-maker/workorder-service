@@ -213,6 +213,27 @@ class WorkOrdersCreateRequest(BaseModel):
         
         return items_data
 
+    def extract_attachments_data(self) -> List[Dict[str, Any]]:
+        """Extract attachments data for attachments table"""
+        attachments = json.loads(self.attachments)
+        attachments_data = []
+        
+        # Define mapping between form field names and attachment types
+        attachment_type_mapping = {
+            'layout': 'layout',
+            'documentation': 'documentation',
+            'photoImages': 'photo_images',
+            'billOfQuantity': 'bill_of_quantity'
+        }
+        
+        for field_name, has_attachment in attachments.items():
+            attachments_data.append({
+                'document_type': attachment_type_mapping.get(field_name, field_name),
+                'has_document': has_attachment
+            })
+        
+        return attachments_data
+
     def extract_vendor_data(self) -> List[Dict[str, Any]]:
         """Extract vendor data for work_order_vendors table"""
         tender_data = json.loads(self.tenderVendorData)
