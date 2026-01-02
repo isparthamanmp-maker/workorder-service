@@ -1,7 +1,7 @@
 # src/services/work_orders_service.py
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors
+from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors, SupportingDocuments
 from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersCreateRequest
 from fastapi import HTTPException
 from sqlalchemy.orm import joinedload
@@ -35,6 +35,14 @@ class WorkOrdersService:
         work_order = WorkOrders(**work_order_data)
         self.db.add(work_order)
         self.db.flush()  # Flush to get the ID without committing
+        
+        # Extract and create attachmetns
+        attachments_data = request_data.extract_attachments_data()
+        for attachment_data in attachments_data:
+            attachment_data['work_order_id'] = work_order.id
+            attachment_item = SupportingDocuments(**attachment_data)
+            self.db.add(attachment_item)
+
         
         # Extract and create work items
         work_items_data = request_data.extract_work_items_data()
