@@ -1,8 +1,11 @@
 # src/services/work_orders_service.py
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from src.models.base import WorkOrders
-from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate
+from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors
+from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersCreateRequest
+from fastapi import HTTPException
+from sqlalchemy.orm import joinedload
+
 
 class WorkOrdersService:
     """work_orders service layer using Pydantic schemas"""
@@ -23,9 +26,116 @@ class WorkOrdersService:
         self.db.refresh(work_orders)
         return work_orders
     
+    def create_work_order_from_request(self, request_data: WorkOrdersCreateRequest) -> Dict[str, Any]:
+        """Create work order from the complex request payload"""
+        # Extract work order data
+        work_order_data = request_data.extract_work_order_data()
+        
+        # Create work order
+        work_order = WorkOrders(**work_order_data)
+        self.db.add(work_order)
+        self.db.flush()  # Flush to get the ID without committing
+        
+        # Extract and create work items
+        work_items_data = request_data.extract_work_items_data()
+        for item_data in work_items_data:
+            item_data['work_order_id'] = work_order.id
+            item_data['total_price'] = item_data['quantity'] * item_data['unit_price']
+            work_item = WorkOrderItems(**item_data)
+            self.db.add(work_item)
+
+        # Extract and create vendor data
+        vendors_data = request_data.extract_vendor_data()
+        for vendor_data in vendors_data:
+            vendor_data['work_order_id'] = work_order.id
+            work_vendor = WorkOrderVendors(**vendor_data)
+            self.db.add(work_vendor)
+        
+        # Commit transaction
+        self.db.commit()
+        self.db.refresh(work_order)
+        
+        # Prepare response
+        response = {
+            "work_order": work_order,
+            "work_items_count": len(work_items_data),
+            "total_cost": request_data.totalCost
+        }
+        
+        return response
+    
     def get_work_orders(self, work_orders_id: int) -> Optional[WorkOrders]:
-        """Get work_orders by ID"""
-        return self.db.query(WorkOrders).filter(WorkOrders.id == work_orders_id).first()
+        """Get work order with same structure as POST payload, plus id at root"""
+    
+        # Get work order with all relationships
+        work_order = (
+            self.db.query(WorkOrders)
+            .options(
+                joinedload(WorkOrders.work_items),
+                joinedload(WorkOrders.vendors)
+            )
+            .filter(WorkOrders.id == work_orders_id)
+            .first()
+        )
+        
+        if not work_order:
+            return None
+        
+        # Build response matching POST request structure PLUS id at root
+        response = {
+            "id": work_order.id,  # Add this top-level id field
+            "workOrder": {
+                "id": work_order.id,
+                "documentNumber": work_order.document_number,
+                "requestDate": work_order.request_date.isoformat() if work_order.request_date else None,
+                "requestType": work_order.request_type,
+                "submittedBy": work_order.submitted_by,
+                "scopeOfWorks": work_order.scope_of_works,
+                "startDate": work_order.start_date.isoformat() if work_order.start_date else None,
+                "endDate": work_order.end_date.isoformat() if work_order.end_date else None,
+                "isUrgent": bool(work_order.is_urgent),
+                "budgetStatus": work_order.budget_status,
+                "costType": work_order.cost_type,
+                "budgetIndex": work_order.budget_index,
+                "budgetName": work_order.budget_name,
+                "costEstimation": float(work_order.cost_estimation) if work_order.cost_estimation else None,
+                "remainingBudget": float(work_order.remaining_budget) if work_order.remaining_budget else None,
+                "underOver": work_order.under_over,
+                "chargeToTenant": bool(work_order.charge_to_tenant),
+                "recommendedContractor": work_order.recommended_contractor,
+                "reason": work_order.reason,
+                "vendorSelectionMethod": work_order.vendor_selection_method,
+                "testAndAnalysis": work_order.test_and_analysis,
+                "createdAt": work_order.created_at.isoformat() if work_order.created_at else None,
+                "updatedAt": work_order.updated_at.isoformat() if work_order.updated_at else None
+            },
+            "workItems": [
+                {
+                    "id": item.id,
+                    "workOrderId": item.work_order_id,
+                    "description": item.description,
+                    "quantity": float(item.quantity) if item.quantity else None,
+                    "unitPrice": float(item.unit_price) if item.unit_price else None,
+                    "totalPrice": float(item.total_price) if item.total_price else None,
+                    "itemOrder": item.item_order
+                }
+                for item in work_order.work_items
+            ],
+            "tenderVendorData": [
+                {
+                    "id": vendor.id,
+                    "workOrderId": vendor.work_order_id,
+                    "vendorName": vendor.vendor_name
+                }
+                for vendor in work_order.vendors
+            ],
+            "totalCost": float(sum(
+                item.quantity * item.unit_price 
+                for item in work_order.work_items
+            ))
+        }
+        
+        return response
     
     def get_work_orderss(self, skip: int = 0, limit: int = 100, order_by: str = "id") -> List[WorkOrders]:
         """Get work_orderss with pagination and ordering"""
