@@ -5,6 +5,7 @@ from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors, Suppor
 from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersCreateRequest
 from fastapi import HTTPException
 from sqlalchemy.orm import joinedload
+from datetime import datetime
 
 
 class WorkOrdersService:
@@ -72,6 +73,73 @@ class WorkOrdersService:
         
         return response
     
+    def update_work_order_from_request(self, work_orders_id: int, request_data: WorkOrdersCreateRequest) -> Dict[str, Any]:
+        """Update existing work order from the complex request payload"""
+        
+        # First, get the existing work order
+        existing_work_order = self.db.query(WorkOrders).filter(WorkOrders.id == work_orders_id).first()
+        
+        if not existing_work_order:
+            raise HTTPException(status_code=404, detail="Work order not found")
+        
+        # Extract work order data for update
+        work_order_data = request_data.extract_work_order_data()
+        
+        # Update the existing work order
+        for key, value in work_order_data.items():
+            if hasattr(existing_work_order, key):
+                setattr(existing_work_order, key, value)
+        
+        # Update the updated_at timestamp
+        existing_work_order.updated_at = datetime.utcnow()
+        
+        # Remove existing attachments and create new ones
+        self.db.query(SupportingDocuments).filter(
+            SupportingDocuments.work_order_id == work_orders_id
+        ).delete()
+        
+        attachments_data = request_data.extract_attachments_data()
+        for attachment_data in attachments_data:
+            attachment_data['work_order_id'] = work_orders_id
+            attachment_item = SupportingDocuments(**attachment_data)
+            self.db.add(attachment_item)
+        
+        # Remove existing work items and create new ones
+        self.db.query(WorkOrderItems).filter(
+            WorkOrderItems.work_order_id == work_orders_id
+        ).delete()
+        
+        work_items_data = request_data.extract_work_items_data()
+        for item_data in work_items_data:
+            item_data['work_order_id'] = work_orders_id
+            item_data['total_price'] = item_data['quantity'] * item_data['unit_price']
+            work_item = WorkOrderItems(**item_data)
+            self.db.add(work_item)
+        
+        # Remove existing vendor data and create new ones
+        self.db.query(WorkOrderVendors).filter(
+            WorkOrderVendors.work_order_id == work_orders_id
+        ).delete()
+        
+        vendors_data = request_data.extract_vendor_data()
+        for vendor_data in vendors_data:
+            vendor_data['work_order_id'] = work_orders_id
+            work_vendor = WorkOrderVendors(**vendor_data)
+            self.db.add(work_vendor)
+        
+        # Commit transaction
+        self.db.commit()
+        self.db.refresh(existing_work_order)
+        
+        # Prepare response
+        response = {
+            "work_order": existing_work_order,
+            "work_items_count": len(work_items_data),
+            "total_cost": request_data.totalCost
+        }
+        
+        return response
+    
     def get_work_orders(self, work_orders_id: int) -> Optional[WorkOrders]:
         """Get work order with same structure as POST payload, plus id at root"""
     
@@ -80,7 +148,8 @@ class WorkOrdersService:
             self.db.query(WorkOrders)
             .options(
                 joinedload(WorkOrders.work_items),
-                joinedload(WorkOrders.vendors)
+                joinedload(WorkOrders.vendors),
+                joinedload(WorkOrders.supporting_documents)
             )
             .filter(WorkOrders.id == work_orders_id)
             .first()
@@ -137,6 +206,15 @@ class WorkOrdersService:
                 }
                 for vendor in work_order.vendors
             ],
+            'supportingDocuments': [  # ADD THIS - transform supporting_documents
+            {
+                'id': doc.id,
+                'workOrderId': doc.work_order_id,
+                'documentType': doc.document_type,
+                'hasDocument': bool(doc.has_document),
+            }
+            for doc in work_order.supporting_documents
+        ],
             "totalCost": float(sum(
                 item.quantity * item.unit_price 
                 for item in work_order.work_items

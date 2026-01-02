@@ -364,6 +364,7 @@ class WorkOrdersFullResponse(BaseModel):
     workOrder: dict
     workItems: List[dict]
     tenderVendorData: List[dict]  # Keep as list
+    supportingDocuments: List[dict]
     totalCost: float
     attachments: List[dict] = Field(default_factory=list)  # Optional with default
     authorizations: List[dict] = Field(default_factory=list)  # Optional with default
