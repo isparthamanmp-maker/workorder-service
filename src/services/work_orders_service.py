@@ -1,7 +1,7 @@
 # src/services/work_orders_service.py
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors, SupportingDocuments
+from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors, SupportingDocuments, Authorizations
 from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersCreateRequest
 from fastapi import HTTPException
 from sqlalchemy.orm import joinedload
@@ -60,6 +60,13 @@ class WorkOrdersService:
             work_vendor = WorkOrderVendors(**vendor_data)
             self.db.add(work_vendor)
         
+         # ADD THIS: Extract and create authorizations data
+        authorizations_data = request_data.extract_authorizations_data()
+        for auth_data in authorizations_data:
+            auth_data['work_order_id'] = work_order.id
+            authorization = Authorizations(**auth_data)
+            self.db.add(authorization)
+
         # Commit transaction
         self.db.commit()
         self.db.refresh(work_order)
@@ -127,6 +134,16 @@ class WorkOrdersService:
             work_vendor = WorkOrderVendors(**vendor_data)
             self.db.add(work_vendor)
         
+        self.db.query(Authorizations).filter(
+            Authorizations.work_order_id == work_orders_id
+        ).delete()
+        
+        authorizations_data = request_data.extract_authorizations_data()
+        for auth_data in authorizations_data:
+            auth_data['work_order_id'] = work_orders_id
+            authorization = Authorizations(**auth_data)
+            self.db.add(authorization)
+            
         # Commit transaction
         self.db.commit()
         self.db.refresh(existing_work_order)
@@ -149,7 +166,8 @@ class WorkOrdersService:
             .options(
                 joinedload(WorkOrders.work_items),
                 joinedload(WorkOrders.vendors),
-                joinedload(WorkOrders.supporting_documents)
+                joinedload(WorkOrders.supporting_documents),
+                joinedload(WorkOrders.authorizations) 
             )
             .filter(WorkOrders.id == work_orders_id)
             .first()
@@ -215,6 +233,8 @@ class WorkOrdersService:
             }
             for doc in work_order.supporting_documents
         ],
+            # ADD THIS: Transform authorizations back to original format
+            'authorizations': self._format_authorizations_response(work_order.authorizations),
             "totalCost": float(sum(
                 item.quantity * item.unit_price 
                 for item in work_order.work_items
@@ -222,6 +242,42 @@ class WorkOrdersService:
         }
         
         return response
+    
+    def _format_authorizations_response(self, authorizations: List[Authorizations]) -> Dict[str, Any]:
+        """Format authorizations data back to the original payload format"""
+        # Initialize with empty values
+        formatted = {
+            "preparedBy": "",
+            "preparedDate": "",
+            "deptHeadName": "",
+            "deptHeadDate": "",
+            "accDeptName": "",
+            "accDeptDate": "",
+            "bmName": "",
+            "bmDate": "",
+            "directorName": "",
+            "directorDate": "",
+            "purchasingName": "",
+            "purchasingDate": ""
+        }
+        
+        # Mapping between authorization_type and form field names
+        auth_mapping = {
+            'prepared_by': ('preparedBy', 'preparedDate'),
+            'dept_head': ('deptHeadName', 'deptHeadDate'),
+            'verified_by_acc_dept': ('accDeptName', 'accDeptDate'),
+            'approved_by_bm': ('bmName', 'bmDate'),
+            'approved_by_director': ('directorName', 'directorDate'),
+            'received_by_purchasing': ('purchasingName', 'purchasingDate')
+        }
+        
+        for auth in authorizations:
+            if auth.authorization_type in auth_mapping:
+                name_field, date_field = auth_mapping[auth.authorization_type]
+                formatted[name_field] = auth.person_name or ""
+                formatted[date_field] = auth.authorization_date.isoformat() if auth.authorization_date else ""
+        
+        return formatted
     
     def get_work_orderss(self, skip: int = 0, limit: int = 100, order_by: str = "id") -> List[WorkOrders]:
         """Get work_orderss with pagination and ordering"""

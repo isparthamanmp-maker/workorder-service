@@ -5,6 +5,23 @@ from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 
+
+class Authorizations(Base):
+    """authorizations model"""
+    __tablename__ = "authorizations"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False)
+    authorization_type = Column(String(50), nullable=False)  # Using String instead of enum for flexibility
+    person_name = Column(String(200), nullable=True)
+    authorization_date = Column(Date, nullable=True)
+    
+    # Relationship to WorkOrders
+    work_order = relationship("WorkOrders", back_populates="authorizations")
+    
+    def __repr__(self):
+        return f"<Authorizations(id={self.id}, type='{self.authorization_type}', person='{self.person_name}')>"
+    
 # Define WorkOrderItems FIRST, using string reference for relationship
 class WorkOrderItems(Base):
     """work_order_items model"""
@@ -56,7 +73,6 @@ class SupportingDocuments(Base):
     def __repr__(self):
         return f"<SupportingDocuments(id={self.id}, document_type='{self.document_type}', has_document={self.has_document})>"
 
-# Define WorkOrders LAST, now it can reference the already-defined classes
 class WorkOrders(Base):
     """work_orders model"""
     __tablename__ = "work_orders"
@@ -90,6 +106,8 @@ class WorkOrders(Base):
     vendors = relationship("WorkOrderVendors", back_populates="work_order", cascade="all, delete-orphan")
     # FIXED: Now matches SupportingDocuments.work_order
     supporting_documents = relationship("SupportingDocuments", back_populates="work_order", cascade="all, delete-orphan")
+    # ADD THIS: Relationship to Authorizations
+    authorizations = relationship("Authorizations", back_populates="work_order", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<WorkOrders(id={self.id}, document_number='{self.document_number}')>"

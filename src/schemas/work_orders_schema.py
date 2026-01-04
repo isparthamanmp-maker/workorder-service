@@ -146,6 +146,14 @@ class WorkOrdersCreateRequest(BaseModel):
         except (json.JSONDecodeError, ValueError) as e:
             raise ValueError(f"Invalid tenderVendorData JSON: {str(e)}")
 
+    @validator('authorizations')
+    def validate_authorizations(cls, v):
+        try:
+            json.loads(v)
+            return v
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid authorizations JSON: {str(e)}")
+        
     def extract_work_order_data(self) -> Dict[str, Any]:
         """Extract and map data to work_orders table columns"""
         form_data = json.loads(self.formData)
@@ -250,6 +258,37 @@ class WorkOrdersCreateRequest(BaseModel):
         
         return vendors_data
 
+    def extract_authorizations_data(self) -> List[Dict[str, Any]]:
+        """Extract authorizations data for authorizations table"""
+        authorizations = json.loads(self.authorizations)
+        authorizations_data = []
+        
+        # Mapping between form field names and authorization types
+        authorization_mapping = {
+            'preparedBy': ('prepared_by', 'preparedDate'),
+            'deptHeadName': ('dept_head', 'deptHeadDate'),
+            'accDeptName': ('verified_by_acc_dept', 'accDeptDate'),
+            'bmName': ('approved_by_bm', 'bmDate'),
+            'directorName': ('approved_by_director', 'directorDate'),
+            'purchasingName': ('received_by_purchasing', 'purchasingDate')
+        }
+        
+        for field_name, (auth_type, date_field) in authorization_mapping.items():
+            person_name = authorizations.get(field_name, '').strip()
+            date_str = authorizations.get(date_field, '').strip()
+            
+            # Only create authorization record if there's a person name
+            if person_name:
+                auth_date = self._parse_date(date_str) if date_str else None
+                
+                authorizations_data.append({
+                    'authorization_type': auth_type,
+                    'person_name': person_name,
+                    'authorization_date': auth_date
+                })
+        
+        return authorizations_data
+    
     def _parse_date(self, date_str: Optional[str]) -> Optional[date]:
         """Parse date string to date object - handle multiple formats"""
         if not date_str:
