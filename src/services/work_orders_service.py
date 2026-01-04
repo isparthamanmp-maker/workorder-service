@@ -314,3 +314,56 @@ class WorkOrdersService:
     def count_work_orderss(self) -> int:
         """Count total work_orders records"""
         return self.db.query(WorkOrders).count()
+    
+
+    def generate_next_document_number(self, submitted_by: str) -> str:
+        """
+        Generate the next document number in format: {number}/WOR/{submitted_by}:NMP/N/{currentyear}
+        
+        Based on existing data:
+        - Format: {number}/WOR/{submitted_by}:NMP/N/{YYYY}
+        - Example: 0009/WOR/IT_Dept:NMP/N/2025
+        
+        Rules:
+        1. Get the highest number for the current year and submitted_by
+        2. Increment by 1
+        3. Pad with leading zeros to 4 digits
+        """
+        from sqlalchemy import extract, func
+        
+        current_year = datetime.now().year
+        
+        # Query for the highest document number for this submitted_by in current year
+        # Using pattern matching to extract the number part
+        from sqlalchemy import text
+        
+        # Get all document numbers for this submitted_by in current year
+        query = self.db.query(WorkOrders.document_number).filter(
+            WorkOrders.submitted_by == submitted_by,
+            extract('year', WorkOrders.request_date) == current_year
+        ).all()
+        
+        max_number = 0
+        
+        for doc_num_row in query:
+            doc_num = doc_num_row[0]
+            if doc_num:
+                # Extract the number part (before the first slash)
+                # Expected format: 0009/WOR/IT_Dept:NMP/N/2025
+                parts = doc_num.split('/')
+                if len(parts) > 0 and parts[0].isdigit():
+                    number_part = int(parts[0])
+                    if number_part > max_number:
+                        max_number = number_part
+        
+        # If no existing documents found for this submitted_by in current year, start from 1
+        next_number = max_number + 1
+        
+        # Format with leading zeros (4 digits)
+        number_str = f"{next_number:04d}"
+        
+        # Construct the new document number
+        # Format: {number}/WOR/{submitted_by}:NMP/N/{currentyear}
+        new_document_number = f"{number_str}/WOR/{submitted_by}:NMP/N/{current_year}"
+        
+        return new_document_number

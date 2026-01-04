@@ -275,43 +275,8 @@ class WorkOrdersCreateRequest(BaseModel):
         return None
 
     def _map_submitted_by(self, submitted_value: str) -> str:
-        """Map submitted_by value to database enum values"""
-        if not submitted_value:
-            return 'IT_Dept'  # Default value
         
-        submitted_value = submitted_value.strip().lower()
-        
-        # Mapping common values to database enum values
-        mapping = {
-            'it dept': 'IT_Dept',
-            'it dept.': 'IT_Dept',
-            'it department': 'IT_Dept',
-            'it': 'IT_Dept',
-            'maresanm': 'Maresanm',
-            'ops support': 'Ops_Support',
-            'ops_support': 'Ops_Support',
-            'ops-support': 'Ops_Support',
-            'ops technical': 'Ops_Technical',
-            'ops_technical': 'Ops_Technical',
-            'ops-technical': 'Ops_Technical',
-            'executive office': 'Executive_Office',
-            'executive_office': 'Executive_Office',
-            'executive-office': 'Executive_Office',
-            'fin acc': 'Fin_Acc',
-            'fin_acc': 'Fin_Acc',
-            'fin-acc': 'Fin_Acc',
-            'finance & accounting': 'Fin_Acc',
-            'accounting': 'Fin_Acc',
-            'finance': 'Fin_Acc',
-        }
-        
-        # Check for exact match or partial match
-        for key, value in mapping.items():
-            if key in submitted_value:
-                return value
-        
-        # Default to IT_Dept if no match found
-        return 'IT_Dept'
+        return submitted_value
 
     def _map_vendor_selection_method(self, method: str) -> str:
         """Map vendor selection method to database enum values"""
@@ -371,3 +336,27 @@ class WorkOrdersFullResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+# src/schemas/work_orders_schema.py
+# Add these schemas at the bottom of the file
+
+class GenerateDocumentNumberRequest(BaseModel):
+    submitted_by: str = Field(
+        ..., 
+        description="The department/person submitting the work order",
+        examples=["IT_Dept", "Executive_Office", "Ops_Support"]
+    )
+
+class DocumentNumberResponse(BaseModel):
+    document_number: str
+    submitted_by: str
+    year: int
+    
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
+            date: lambda v: v.isoformat() if v else None,
+            datetime: lambda v: v.isoformat() if v else None,
+        }
+    )
