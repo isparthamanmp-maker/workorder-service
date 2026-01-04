@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from typing import List, Optional
 from src.services.work_orders_service import WorkOrdersService
 from src.api.dependencies import get_work_orders_service
-from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersResponse, WorkOrdersCreateRequest, WorkOrdersFullResponse
+from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersResponse, WorkOrdersCreateRequest, WorkOrdersFullResponse, DocumentNumberResponse
+from datetime import datetime
 
 router = APIRouter(prefix="/api/v1/work_orders", tags=["work_orders"])  # Fixed typo: work_orderss -> work_orders
 
@@ -50,6 +51,53 @@ def get_work_orderss(
         return work_orders_service.search_work_orderss(search, skip, limit)
     return work_orders_service.get_work_orderss(skip, limit)
 
+
+# src/api/routes/work_orders_routes.py
+# Add this route to the router
+
+@router.get("/generate-document-number", response_model=DocumentNumberResponse)
+def generate_document_number(
+    submitted_by: str = Query(
+        ..., 
+        description="Department/person submitting (e.g., IT_Dept, Executive_Office, Ops_Support)"
+    ),
+    work_orders_service: WorkOrdersService = Depends(get_work_orders_service)
+):
+    """
+    Generate the next document number for a specific submitted_by department.
+    
+    Format: {number}/WOR/{submitted_by}:NMP/N/{currentyear}
+    
+    Example: 0009/WOR/IT_Dept:NMP/N/2025
+    
+    The number part is auto-incremented based on existing documents for the same
+    submitted_by in the current year.
+    """
+    try:
+        # Validate submitted_by is not empty
+        if not submitted_by or not submitted_by.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="submitted_by parameter is required"
+            )
+        
+        # Generate the document number
+        document_number = work_orders_service.generate_next_document_number(submitted_by.strip())
+        
+        return DocumentNumberResponse(
+            document_number=document_number,
+            submitted_by=submitted_by,
+            year=datetime.now().year
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating document number: {str(e)}"
+        )
+    
 # In src/api/routes/work_orders_routes.py
 @router.get("/{work_orders_id}", response_model=WorkOrdersFullResponse)  # Changed response model
 def get_work_orders(
@@ -105,3 +153,4 @@ def delete_work_orders(
     """Delete work_orders"""
     if not work_orders_service.delete_work_orders(work_orders_id):
         raise HTTPException(status_code=404, detail=f"{pascal_name} not found")
+    
