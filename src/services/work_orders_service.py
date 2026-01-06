@@ -234,7 +234,7 @@ class WorkOrdersService:
             for doc in work_order.supporting_documents
         ],
             # ADD THIS: Transform authorizations back to original format
-            'authorizations': self._format_authorizations_response(work_order.authorizations),
+            'authorizations': [self._format_authorizations_response(work_order.authorizations)],
             "totalCost": float(sum(
                 item.quantity * item.unit_price 
                 for item in work_order.work_items
