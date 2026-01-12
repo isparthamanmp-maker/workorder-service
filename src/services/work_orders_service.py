@@ -43,7 +43,7 @@ class WorkOrdersService:
             import requests
             import json
 
-            url = f"{os.getenv('BUDGET_SERVICE')}/api/v1/budget_final_realisasis/" 
+            url = f'{os.getenv("BUDGET_SERVICE")}/api/v1/budget_final_realisasis/'
             payload = json.dumps({
                 "budget_index": work_order.budget_index,
                 "refid": work_order.id,
