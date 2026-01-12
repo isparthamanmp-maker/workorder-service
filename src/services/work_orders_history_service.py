@@ -6,6 +6,8 @@ from src.schemas.work_orders_history_schema import WorkOrdersHistoryCreate, Work
 
 import datetime
 import os
+import requests
+import json
 
 class WorkOrdersHistoryService:
     """work_orders_history service layer using Pydantic schemas"""
@@ -37,8 +39,7 @@ class WorkOrdersHistoryService:
 
                     if work_orders_history.status=='Cancel':
                         # Make budget API call
-                        import requests
-                        import json
+                        
 
                         url = f'{os.getenv("BUDGET_SERVICE")}/api/v1/budget_final_realisasis/'
                         print(url)

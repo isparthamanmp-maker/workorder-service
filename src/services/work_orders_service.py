@@ -7,6 +7,9 @@ from fastapi import HTTPException
 from sqlalchemy.orm import joinedload
 from datetime import datetime
 
+import requests
+import json
+
 import os
 
 class WorkOrdersService:
@@ -40,8 +43,7 @@ class WorkOrdersService:
             self.db.flush()  # Flush to get the ID without committing
             
             # Make budget API call
-            import requests
-            import json
+            
 
             url = f'{os.getenv("BUDGET_SERVICE")}/api/v1/budget_final_realisasis/'
             payload = json.dumps({
