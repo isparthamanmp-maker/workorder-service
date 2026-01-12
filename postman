@@ -1,17 +1,17 @@
 {
   "info": {
-    "name": "WorkOrders API Collection",
-    "description": "Postman collection for WorkOrders API",
+    "name": "WorkOrdersHistory API Collection",
+    "description": "Postman collection for WorkOrdersHistory API",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "_postman_id": "71a25e44-aa7c-49f6-9e27-9675eca38e52"
+    "_postman_id": "ea120332-b94e-4964-953b-f5180275279c"
   },
   "item": [
     {
-      "name": "WorkOrders Endpoints",
-      "description": "Endpoints for work_orders",
+      "name": "WorkOrdersHistory Endpoints",
+      "description": "Endpoints for work_orders_history",
       "item": [
         {
-          "name": "Create a new work_orders record",
+          "name": "Create a new work_orders_history record",
           "request": {
             "method": "POST",
             "header": [
@@ -21,18 +21,18 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/work_orderss/",
+              "raw": "{{base_url}}/api/v1/work_orders_historys/",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "work_orderss",
+                "work_orders_historys",
                 ""
               ]
             },
-            "description": "Create a new work_orders record",
+            "description": "Create a new work_orders_history record",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Example Name\"\n}",
@@ -46,7 +46,7 @@
           "response": []
         },
         {
-          "name": "Get all work_orderss with pagination and search",
+          "name": "Get all work_orders_historys with pagination and s",
           "request": {
             "method": "GET",
             "header": [
@@ -56,14 +56,14 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/work_orderss/",
+              "raw": "{{base_url}}/api/v1/work_orders_historys/",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "work_orderss",
+                "work_orders_historys",
                 ""
               ],
               "query": [
@@ -84,12 +84,12 @@
                 }
               ]
             },
-            "description": "Get all work_orderss with pagination and search"
+            "description": "Get all work_orders_historys with pagination and search"
           },
           "response": []
         },
         {
-          "name": "Get all work_orderss with pagination and search",
+          "name": "Get all work_orders_historys with pagination and s",
           "request": {
             "method": "GET",
             "header": [
@@ -99,29 +99,29 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "raw": "{{base_url}}/api/v1/work_orders_historys/{work_orders_history_id}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "work_orderss",
-                "{work_orders_id}"
+                "work_orders_historys",
+                "{work_orders_history_id}"
               ],
               "variable": [
                 {
-                  "key": "work_orders_id",
+                  "key": "work_orders_history_id",
                   "value": "1"
                 }
               ]
             },
-            "description": "Get all work_orderss with pagination and search"
+            "description": "Get all work_orders_historys with pagination and search"
           },
           "response": []
         },
         {
-          "name": "Update work_orders",
+          "name": "Update work_orders_history",
           "request": {
             "method": "PUT",
             "header": [
@@ -131,24 +131,24 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "raw": "{{base_url}}/api/v1/work_orders_historys/{work_orders_history_id}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "work_orderss",
-                "{work_orders_id}"
+                "work_orders_historys",
+                "{work_orders_history_id}"
               ],
               "variable": [
                 {
-                  "key": "work_orders_id",
+                  "key": "work_orders_history_id",
                   "value": "1"
                 }
               ]
             },
-            "description": "Update work_orders",
+            "description": "Update work_orders_history",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Updated Name\"\n}",
@@ -162,7 +162,7 @@
           "response": []
         },
         {
-          "name": "Delete work_orders",
+          "name": "Delete work_orders_history",
           "request": {
             "method": "DELETE",
             "header": [
@@ -172,29 +172,29 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "raw": "{{base_url}}/api/v1/work_orders_historys/{work_orders_history_id}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "work_orderss",
-                "{work_orders_id}"
+                "work_orders_historys",
+                "{work_orders_history_id}"
               ],
               "variable": [
                 {
-                  "key": "work_orders_id",
+                  "key": "work_orders_history_id",
                   "value": "1"
                 }
               ]
             },
-            "description": "Delete work_orders"
+            "description": "Delete work_orders_history"
           },
           "response": []
         },
         {
-          "name": "Create a new work_orders record",
+          "name": "Create a new work_orders_history record",
           "request": {
             "method": "POST",
             "header": [
@@ -204,18 +204,18 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/work_orderss/",
+              "raw": "{{base_url}}/api/v1/work_orders_historys/",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "work_orderss",
+                "work_orders_historys",
                 ""
               ]
             },
-            "description": "Create a new work_orders record",
+            "description": "Create a new work_orders_history record",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Example Name\"\n}",
@@ -229,7 +229,7 @@
           "response": []
         },
         {
-          "name": "Get all work_orderss with pagination and search",
+          "name": "Get all work_orders_historys with pagination and s",
           "request": {
             "method": "GET",
             "header": [
@@ -239,14 +239,14 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/work_orderss/",
+              "raw": "{{base_url}}/api/v1/work_orders_historys/",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "work_orderss",
+                "work_orders_historys",
                 ""
               ],
               "query": [
@@ -267,12 +267,12 @@
                 }
               ]
             },
-            "description": "Get all work_orderss with pagination and search"
+            "description": "Get all work_orders_historys with pagination and search"
           },
           "response": []
         },
         {
-          "name": "Get all work_orderss with pagination and search",
+          "name": "Get all work_orders_historys with pagination and s",
           "request": {
             "method": "GET",
             "header": [
@@ -282,29 +282,29 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "raw": "{{base_url}}/api/v1/work_orders_historys/{work_orders_history_id}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "work_orderss",
-                "{work_orders_id}"
+                "work_orders_historys",
+                "{work_orders_history_id}"
               ],
               "variable": [
                 {
-                  "key": "work_orders_id",
+                  "key": "work_orders_history_id",
                   "value": "1"
                 }
               ]
             },
-            "description": "Get all work_orderss with pagination and search"
+            "description": "Get all work_orders_historys with pagination and search"
           },
           "response": []
         },
         {
-          "name": "Update work_orders",
+          "name": "Update work_orders_history",
           "request": {
             "method": "PUT",
             "header": [
@@ -314,24 +314,24 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "raw": "{{base_url}}/api/v1/work_orders_historys/{work_orders_history_id}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "work_orderss",
-                "{work_orders_id}"
+                "work_orders_historys",
+                "{work_orders_history_id}"
               ],
               "variable": [
                 {
-                  "key": "work_orders_id",
+                  "key": "work_orders_history_id",
                   "value": "1"
                 }
               ]
             },
-            "description": "Update work_orders",
+            "description": "Update work_orders_history",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Updated Name\"\n}",
@@ -345,7 +345,7 @@
           "response": []
         },
         {
-          "name": "Delete work_orders",
+          "name": "Delete work_orders_history",
           "request": {
             "method": "DELETE",
             "header": [
@@ -355,24 +355,24 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/work_orderss/{work_orders_id}",
+              "raw": "{{base_url}}/api/v1/work_orders_historys/{work_orders_history_id}",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "work_orderss",
-                "{work_orders_id}"
+                "work_orders_historys",
+                "{work_orders_history_id}"
               ],
               "variable": [
                 {
-                  "key": "work_orders_id",
+                  "key": "work_orders_history_id",
                   "value": "1"
                 }
               ]
             },
-            "description": "Delete work_orders"
+            "description": "Delete work_orders_history"
           },
           "response": []
         }
