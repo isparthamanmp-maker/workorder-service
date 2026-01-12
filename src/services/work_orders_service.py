@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import joinedload
 from datetime import datetime
 
+import os
 
 class WorkOrdersService:
     """work_orders service layer using Pydantic schemas"""
@@ -29,56 +30,91 @@ class WorkOrdersService:
     
     def create_work_order_from_request(self, request_data: WorkOrdersCreateRequest) -> Dict[str, Any]:
         """Create work order from the complex request payload"""
-        # Extract work order data
-        work_order_data = request_data.extract_work_order_data()
-        
-        # Create work order
-        work_order = WorkOrders(**work_order_data)
-        self.db.add(work_order)
-        self.db.flush()  # Flush to get the ID without committing
-        
-        # Extract and create attachmetns
-        attachments_data = request_data.extract_attachments_data()
-        for attachment_data in attachments_data:
-            attachment_data['work_order_id'] = work_order.id
-            attachment_item = SupportingDocuments(**attachment_data)
-            self.db.add(attachment_item)
+        try:
+            # Extract work order data
+            work_order_data = request_data.extract_work_order_data()
+            
+            # Create work order
+            work_order = WorkOrders(**work_order_data)
+            self.db.add(work_order)
+            self.db.flush()  # Flush to get the ID without committing
+            
+            # Make budget API call
+            import requests
+            import json
 
-        
-        # Extract and create work items
-        work_items_data = request_data.extract_work_items_data()
-        for item_data in work_items_data:
-            item_data['work_order_id'] = work_order.id
-            item_data['total_price'] = item_data['quantity'] * item_data['unit_price']
-            work_item = WorkOrderItems(**item_data)
-            self.db.add(work_item)
+            url = f"{os.getenv("BUDGET_SERVICE")}/api/v1/budget_final_realisasis/"
+            payload = json.dumps({
+                "budget_index": work_order.budget_index,
+                "refid": work_order.id,
+                "refnum": work_order.document_number,
+                "refvalue": work_order.cost_estimation,
+                "created_by": "Ketut Sakho Parthama"
+            })
+            headers = {
+                'Content-Type': 'application/json'
+            }
+            
+            response = requests.request("POST", url, headers=headers, data=payload)
+            
+            # Check if API call was successful
+            if response.status_code not in [200, 201]:
+                raise Exception(f"Budget API call failed with status {response.status_code}: {response.text}")
+            
+            # Extract and create attachments
+            attachments_data = request_data.extract_attachments_data()
+            for attachment_data in attachments_data:
+                attachment_data['work_order_id'] = work_order.id
+                attachment_item = SupportingDocuments(**attachment_data)
+                self.db.add(attachment_item)
 
-        # Extract and create vendor data
-        vendors_data = request_data.extract_vendor_data()
-        for vendor_data in vendors_data:
-            vendor_data['work_order_id'] = work_order.id
-            work_vendor = WorkOrderVendors(**vendor_data)
-            self.db.add(work_vendor)
-        
-         # ADD THIS: Extract and create authorizations data
-        authorizations_data = request_data.extract_authorizations_data()
-        for auth_data in authorizations_data:
-            auth_data['work_order_id'] = work_order.id
-            authorization = Authorizations(**auth_data)
-            self.db.add(authorization)
+            # Extract and create work items
+            work_items_data = request_data.extract_work_items_data()
+            for item_data in work_items_data:
+                item_data['work_order_id'] = work_order.id
+                item_data['total_price'] = item_data['quantity'] * item_data['unit_price']
+                work_item = WorkOrderItems(**item_data)
+                self.db.add(work_item)
 
-        # Commit transaction
-        self.db.commit()
-        self.db.refresh(work_order)
-        
-        # Prepare response
-        response = {
-            "work_order": work_order,
-            "work_items_count": len(work_items_data),
-            "total_cost": request_data.totalCost
-        }
-        
-        return response
+            # Extract and create vendor data
+            vendors_data = request_data.extract_vendor_data()
+            for vendor_data in vendors_data:
+                vendor_data['work_order_id'] = work_order.id
+                work_vendor = WorkOrderVendors(**vendor_data)
+                self.db.add(work_vendor)
+            
+            # Extract and create authorizations data
+            authorizations_data = request_data.extract_authorizations_data()
+            for auth_data in authorizations_data:
+                auth_data['work_order_id'] = work_order.id
+                authorization = Authorizations(**auth_data)
+                self.db.add(authorization)
+
+            # Commit transaction
+            self.db.commit()
+            self.db.refresh(work_order)
+            
+            # Prepare response
+            response = {
+                "work_order": work_order,
+                "work_items_count": len(work_items_data),
+                "total_cost": request_data.totalCost
+            }
+            
+            return response
+            
+        except requests.exceptions.RequestException as e:
+            # Rollback database transaction on API call failure
+            self.db.rollback()
+            raise Exception(f"Failed to call budget API: {str(e)}")
+            
+        except Exception as e:
+            # Rollback database transaction on any other error
+            self.db.rollback()
+            # Log the error for debugging
+            print(f"Error creating work order: {str(e)}")
+            # Re-raise the exception or handle it as needed
+            raise Exception(f"Failed to create work order: {str(e)}")
     
     def update_work_order_from_request(self, work_orders_id: int, request_data: WorkOrdersCreateRequest) -> Dict[str, Any]:
         """Update existing work order from the complex request payload"""
@@ -202,7 +238,8 @@ class WorkOrdersService:
                 "vendorSelectionMethod": work_order.vendor_selection_method,
                 "testAndAnalysis": work_order.test_and_analysis,
                 "createdAt": work_order.created_at.isoformat() if work_order.created_at else None,
-                "updatedAt": work_order.updated_at.isoformat() if work_order.updated_at else None
+                "updatedAt": work_order.updated_at.isoformat() if work_order.updated_at else None,
+                "status": work_order.status,
             },
             "workItems": [
                 {

@@ -2,6 +2,9 @@
 from sqlalchemy import Column, Integer, String, Text, Date, DateTime, SmallInteger, Numeric, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, TIMESTAMP
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 Base = declarative_base()
 
@@ -100,6 +103,7 @@ class WorkOrders(Base):
     test_and_analysis = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=True, server_default='CURRENT_TIMESTAMP')
     updated_at = Column(DateTime, nullable=True, onupdate='CURRENT_TIMESTAMP')
+    status = Column(String(100), nullable=False, default='Draft')
     
     # Now we can reference the already-defined classes
     work_items = relationship("WorkOrderItems", back_populates="work_order", cascade="all, delete-orphan")
@@ -112,7 +116,21 @@ class WorkOrders(Base):
     def __repr__(self):
         return f"<WorkOrders(id={self.id}, document_number='{self.document_number}')>"
 
+class WorkOrdersHistory(Base):
+    """work_orders_history model"""
+    __tablename__ = "work_orders_history"
 
+    id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    status = Column(String(100), nullable=False)
+    refid = Column(Integer, nullable=False)  # This likely references work_orders.id
+    refnum = Column(String(100), nullable=False)  # This likely references work_orders.document_number
+    refvalue = Column(Numeric(15, 2), nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+    created_by = Column(String(100), nullable=True)
+
+    def __repr__(self):
+        return f"<WorkOrdersHistory(id={self.id}, refnum='{self.refnum}', status='{self.status}')>"
+    
 # If you have User model, define it AFTER WorkOrders if they have relationships
 class User(Base):
     """user model"""

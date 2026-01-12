@@ -30,6 +30,7 @@ class WorkOrdersResponse(BaseModel):
     test_and_analysis: Optional[str] = None
     created_at: Optional[datetime] = None  # Changed from str to datetime
     updated_at: Optional[datetime] = None  # Changed from str to datetime
+    status: str = None
     
     model_config = ConfigDict(
         from_attributes=True,
