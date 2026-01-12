@@ -40,7 +40,7 @@ class WorkOrdersHistoryService:
                         import requests
                         import json
 
-                        url = f"{os.getenv("BUDGET_SERVICE")}/api/v1/budget_final_realisasis/"
+                        url = f'{os.getenv("BUDGET_SERVICE")}/api/v1/budget_final_realisasis/'
                         print(url)
                         payload = json.dumps({
                             "budget_index": work_order.budget_index,
