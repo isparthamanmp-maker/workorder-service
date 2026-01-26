@@ -274,6 +274,7 @@ class WorkOrdersService:
             print(f"Error processing files: {e}")
             raise Exception(f"Failed to process files: {str(e)}")
     
+    # src/services/work_orders_service.py - Update the update_work_order_from_request method
     def update_work_order_from_request(self, work_orders_id: int, request_data: WorkOrdersCreateRequest) -> Dict[str, Any]:
         """Update existing work order from the complex request payload"""
         
@@ -283,75 +284,98 @@ class WorkOrdersService:
         if not existing_work_order:
             raise HTTPException(status_code=404, detail="Work order not found")
         
-        # Extract work order data for update
-        work_order_data = request_data.extract_work_order_data()
-        
-        # Update the existing work order
-        for key, value in work_order_data.items():
-            if hasattr(existing_work_order, key):
-                setattr(existing_work_order, key, value)
-        
-        # Update the updated_at timestamp
-        existing_work_order.updated_at = datetime.utcnow()
-        
-        # Remove existing attachments and create new ones
-        self.db.query(SupportingDocuments).filter(
-            SupportingDocuments.work_order_id == work_orders_id
-        ).delete()
-        
-        # Remove existing files
-        self.db.query(WorkOrderFiles).filter(
-            WorkOrderFiles.work_order_id == work_orders_id
-        ).delete()
-        
-        # Process new attachments and files
-        self._process_attachments_and_files(request_data, work_orders_id)
-        
-        # Remove existing work items and create new ones
-        self.db.query(WorkOrderItems).filter(
-            WorkOrderItems.work_order_id == work_orders_id
-        ).delete()
-        
-        work_items_data = request_data.extract_work_items_data()
-        for item_data in work_items_data:
-            item_data['work_order_id'] = work_orders_id
-            item_data['total_price'] = item_data['quantity'] * item_data['unit_price']
-            work_item = WorkOrderItems(**item_data)
-            self.db.add(work_item)
-        
-        # Remove existing vendor data and create new ones
-        self.db.query(WorkOrderVendors).filter(
-            WorkOrderVendors.work_order_id == work_orders_id
-        ).delete()
-        
-        vendors_data = request_data.extract_vendor_data()
-        for vendor_data in vendors_data:
-            vendor_data['work_order_id'] = work_orders_id
-            work_vendor = WorkOrderVendors(**vendor_data)
-            self.db.add(work_vendor)
-        
-        self.db.query(Authorizations).filter(
-            Authorizations.work_order_id == work_orders_id
-        ).delete()
-        
-        authorizations_data = request_data.extract_authorizations_data()
-        for auth_data in authorizations_data:
-            auth_data['work_order_id'] = work_orders_id
-            authorization = Authorizations(**auth_data)
-            self.db.add(authorization)
+        try:
+            # Extract work order data for update
+            work_order_data = request_data.extract_work_order_data()
             
-        # Commit transaction
-        self.db.commit()
-        self.db.refresh(existing_work_order)
+            # Update the existing work order
+            for key, value in work_order_data.items():
+                if hasattr(existing_work_order, key):
+                    setattr(existing_work_order, key, value)
+            
+            # Update the updated_at timestamp
+            existing_work_order.updated_at = datetime.utcnow()
+            
+            # --- FIX: Delete child records first to avoid foreign key constraint violation ---
+            
+            # 1. First delete work_order_files that reference supporting_documents
+            # Find all supporting_document_ids for this work order
+            supporting_docs = self.db.query(SupportingDocuments).filter(
+                SupportingDocuments.work_order_id == work_orders_id
+            ).all()
+            
+            supporting_doc_ids = [doc.id for doc in supporting_docs]
+            
+            if supporting_doc_ids:
+                # Delete work_order_files that reference these supporting_documents
+                self.db.query(WorkOrderFiles).filter(
+                    WorkOrderFiles.supporting_document_id.in_(supporting_doc_ids)
+                ).delete(synchronize_session=False)
+            
+            # 2. Now delete supporting_documents
+            self.db.query(SupportingDocuments).filter(
+                SupportingDocuments.work_order_id == work_orders_id
+            ).delete(synchronize_session=False)
+            
+            # 3. Also delete any work_order_files that might not have supporting_document_id
+            # (direct work_order_id references)
+            self.db.query(WorkOrderFiles).filter(
+                WorkOrderFiles.work_order_id == work_orders_id
+            ).delete(synchronize_session=False)
+            
+            # Process new attachments and files
+            self._process_attachments_and_files(request_data, work_orders_id)
+            
+            # Remove existing work items and create new ones
+            self.db.query(WorkOrderItems).filter(
+                WorkOrderItems.work_order_id == work_orders_id
+            ).delete(synchronize_session=False)
+            
+            work_items_data = request_data.extract_work_items_data()
+            for item_data in work_items_data:
+                item_data['work_order_id'] = work_orders_id
+                item_data['total_price'] = item_data['quantity'] * item_data['unit_price']
+                work_item = WorkOrderItems(**item_data)
+                self.db.add(work_item)
+            
+            # Remove existing vendor data and create new ones
+            self.db.query(WorkOrderVendors).filter(
+                WorkOrderVendors.work_order_id == work_orders_id
+            ).delete(synchronize_session=False)
+            
+            vendors_data = request_data.extract_vendor_data()
+            for vendor_data in vendors_data:
+                vendor_data['work_order_id'] = work_orders_id
+                work_vendor = WorkOrderVendors(**vendor_data)
+                self.db.add(work_vendor)
+            
+            self.db.query(Authorizations).filter(
+                Authorizations.work_order_id == work_orders_id
+            ).delete(synchronize_session=False)
+            
+            authorizations_data = request_data.extract_authorizations_data()
+            for auth_data in authorizations_data:
+                auth_data['work_order_id'] = work_orders_id
+                authorization = Authorizations(**auth_data)
+                self.db.add(authorization)
+                
+            # Commit transaction
+            self.db.commit()
+            self.db.refresh(existing_work_order)
+            
+            # Prepare response
+            response = {
+                "work_order": existing_work_order,
+                "work_items_count": len(work_items_data),
+                "total_cost": request_data.totalCost
+            }
+            
+            return response
         
-        # Prepare response
-        response = {
-            "work_order": existing_work_order,
-            "work_items_count": len(work_items_data),
-            "total_cost": request_data.totalCost
-        }
-        
-        return response
+        except Exception as e:
+            self.db.rollback()
+            print(f"Error updating work order: {str(e)}")
+            raise Exception(f"Failed to update work order: {str(e)}")
     
     def get_work_orders(self, work_orders_id: int) -> Optional[WorkOrders]:
         """Get work order with same structure as POST payload, plus id at root"""
