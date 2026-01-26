@@ -7,6 +7,7 @@ from src.config.database import db_manager
 from src.api.routes.user_routes import router as api_router
 from src.api.routes.work_order_routes import router as work_order_router
 from src.api.routes.work_orders_history_routes import router as work_orders_history_router
+from src.api.routes.files_routes import router as files_router  # Add this import
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,6 +52,7 @@ app.add_middleware(
 app.include_router(api_router)
 app.include_router(work_order_router)
 app.include_router(work_orders_history_router)
+app.include_router(files_router)
 
 # Health check endpoint
 @app.get("/health")

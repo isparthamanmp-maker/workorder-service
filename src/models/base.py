@@ -2,9 +2,7 @@
 from sqlalchemy import Column, Integer, String, Text, Date, DateTime, SmallInteger, Numeric, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, TIMESTAMP
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
 
 Base = declarative_base()
 
@@ -15,17 +13,17 @@ class Authorizations(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
     work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False)
-    authorization_type = Column(String(50), nullable=False)  # Using String instead of enum for flexibility
+    authorization_type = Column(String(50), nullable=False)
     person_name = Column(String(200), nullable=True)
     authorization_date = Column(Date, nullable=True)
     
-    # Relationship to WorkOrders
+    # Use string reference for relationship
     work_order = relationship("WorkOrders", back_populates="authorizations")
     
     def __repr__(self):
         return f"<Authorizations(id={self.id}, type='{self.authorization_type}', person='{self.person_name}')>"
-    
-# Define WorkOrderItems FIRST, using string reference for relationship
+
+
 class WorkOrderItems(Base):
     """work_order_items model"""
     __tablename__ = "work_order_items"
@@ -45,7 +43,6 @@ class WorkOrderItems(Base):
         return f"<WorkOrderItems(id={self.id}, description='{self.description[:50]}...')>"
 
 
-# Define WorkOrderVendors SECOND, also using string reference
 class WorkOrderVendors(Base):
     """work_order_vendors model"""
     __tablename__ = "work_order_vendors"
@@ -70,11 +67,12 @@ class SupportingDocuments(Base):
     document_type = Column(String(100), nullable=False)
     has_document = Column(Boolean, default=False)
     
-    # FIXED: Point to WorkOrders, not self, and match the back_populates name
+    # Use string reference for relationship
     work_order = relationship("WorkOrders", back_populates="supporting_documents")
     
     def __repr__(self):
         return f"<SupportingDocuments(id={self.id}, document_type='{self.document_type}', has_document={self.has_document})>"
+
 
 class WorkOrders(Base):
     """work_orders model"""
@@ -101,20 +99,45 @@ class WorkOrders(Base):
     reason = Column(Text, nullable=True)
     vendor_selection_method = Column(String, nullable=True)
     test_and_analysis = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=True, server_default='CURRENT_TIMESTAMP')
-    updated_at = Column(DateTime, nullable=True, onupdate='CURRENT_TIMESTAMP')
+    created_at = Column(DateTime, nullable=True, server_default=func.current_timestamp())
+    updated_at = Column(DateTime, nullable=True, onupdate=func.current_timestamp())
     status = Column(String(100), nullable=False, default='Draft')
     
-    # Now we can reference the already-defined classes
+    # Use string references for relationships
     work_items = relationship("WorkOrderItems", back_populates="work_order", cascade="all, delete-orphan")
     vendors = relationship("WorkOrderVendors", back_populates="work_order", cascade="all, delete-orphan")
-    # FIXED: Now matches SupportingDocuments.work_order
     supporting_documents = relationship("SupportingDocuments", back_populates="work_order", cascade="all, delete-orphan")
-    # ADD THIS: Relationship to Authorizations
     authorizations = relationship("Authorizations", back_populates="work_order", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<WorkOrders(id={self.id}, document_number='{self.document_number}')>"
+
+
+class WorkOrderFiles(Base):
+    """work_order_files model to store file information"""
+    __tablename__ = "work_order_files"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False)
+    supporting_document_id = Column(Integer, ForeignKey('supporting_documents.id'), nullable=True)
+    file_name = Column(String(255), nullable=False)
+    file_url = Column(String(500), nullable=False)  # MinIO URL
+    file_size = Column(Integer, nullable=True)  # Size in bytes
+    upload_date = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+    
+    # Relationships - using string references to avoid circular imports
+    work_order = relationship("WorkOrders", back_populates="files")
+    supporting_document = relationship("SupportingDocuments", back_populates="files")
+    
+    def __repr__(self):
+        return f"<WorkOrderFiles(id={self.id}, file_name='{self.file_name}')>"
+
+
+# Add relationships after all classes are defined
+# This needs to be done after class definitions to avoid circular references
+SupportingDocuments.files = relationship("WorkOrderFiles", back_populates="supporting_document", cascade="all, delete-orphan")
+WorkOrders.files = relationship("WorkOrderFiles", back_populates="work_order", cascade="all, delete-orphan")
+
 
 class WorkOrdersHistory(Base):
     """work_orders_history model"""
@@ -122,8 +145,8 @@ class WorkOrdersHistory(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
     status = Column(String(100), nullable=False)
-    refid = Column(Integer, nullable=False)  # This likely references work_orders.id
-    refnum = Column(String(100), nullable=False)  # This likely references work_orders.document_number
+    refid = Column(Integer, nullable=False)
+    refnum = Column(String(100), nullable=False)
     refvalue = Column(Numeric(15, 2), nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     created_by = Column(String(100), nullable=True)

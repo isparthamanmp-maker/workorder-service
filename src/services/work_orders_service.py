@@ -1,22 +1,110 @@
 # src/services/work_orders_service.py
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors, SupportingDocuments, Authorizations
+from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors, SupportingDocuments, Authorizations, WorkOrderFiles
 from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersCreateRequest
 from fastapi import HTTPException
 from sqlalchemy.orm import joinedload
 from datetime import datetime
-
 import requests
 import json
-
 import os
+import io
+import binascii
+from minio import Minio
+from minio.error import S3Error
 
 class WorkOrdersService:
     """work_orders service layer using Pydantic schemas"""
     
     def __init__(self, db: Session):
         self.db = db
+        # Initialize MinIO client
+        self.minio_client = Minio(
+            endpoint="10.10.1.7:9000",
+            access_key="minioadmin",
+            secret_key="StrongPasswordHere123",
+            secure=False
+        )
+        self.bucket_name = "workorder"
+        
+        # Ensure bucket exists
+        self._ensure_bucket_exists()
+    
+    def _ensure_bucket_exists(self):
+        """Check if bucket exists, create if not"""
+        try:
+            if not self.minio_client.bucket_exists(self.bucket_name):
+                self.minio_client.make_bucket(self.bucket_name)
+                print(f"Bucket '{self.bucket_name}' created successfully")
+        except S3Error as e:
+            print(f"Error ensuring bucket exists: {e}")
+    
+    def _upload_to_minio(self, file_name: str, hex_content: str) -> str:
+        """
+        Upload file to MinIO and return the object URL
+        
+        Args:
+            file_name: Name of the file
+            hex_content: Hex string content of the file
+        
+        Returns:
+            URL of the uploaded file
+        """
+        try:
+            # Clean hex content (remove spaces and newlines)
+            hex_content = hex_content.replace(" ", "").replace("\n", "").replace("\r", "")
+            
+            # Convert hex string to bytes
+            file_bytes = binascii.unhexlify(hex_content)
+            
+            # Convert to file-like object
+            file_data = io.BytesIO(file_bytes)
+            file_size = len(file_bytes)
+            
+            # Create safe filename and object name
+            safe_file_name = file_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
+            object_name = f"{datetime.now().strftime('%Y/%m/%d')}/{safe_file_name}"
+            
+            # Upload to MinIO
+            self.minio_client.put_object(
+                bucket_name=self.bucket_name,
+                object_name=object_name,
+                data=file_data,
+                length=file_size,
+                content_type=self._get_content_type(file_name)
+            )
+            
+            # Generate URL
+            url = f"http://10.10.1.7:9000/{self.bucket_name}/{object_name}"
+            return url, file_size
+            
+        except binascii.Error as e:
+            print(f"Error decoding hex content for {file_name}: {e}")
+            raise Exception(f"Invalid hex content in file {file_name}: {str(e)}")
+        except Exception as e:
+            print(f"Error uploading {file_name} to MinIO: {e}")
+            raise Exception(f"Failed to upload file {file_name}: {str(e)}")
+    
+    def _get_content_type(self, file_name: str) -> str:
+        """Get content type based on file extension"""
+        ext = os.path.splitext(file_name)[1].lower()
+        
+        content_types = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.pdf': 'application/pdf',
+            '.doc': 'application/msword',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.xls': 'application/vnd.ms-excel',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '.txt': 'text/plain',
+            '.csv': 'text/csv',
+        }
+        
+        return content_types.get(ext, 'application/octet-stream')
     
     def create_work_orders(self, work_orders_data: WorkOrdersCreate) -> WorkOrders:
         """Create a new work_orders record from Pydantic schema"""
@@ -43,8 +131,6 @@ class WorkOrdersService:
             self.db.flush()  # Flush to get the ID without committing
             
             # Make budget API call
-            
-
             url = f'{os.getenv("BUDGET_SERVICE")}/api/v1/budget_final_realisasis/'
             payload = json.dumps({
                 "budget_index": work_order.budget_index,
@@ -63,12 +149,8 @@ class WorkOrdersService:
             if response.status_code not in [200, 201]:
                 raise Exception(f"Budget API call failed with status {response.status_code}: {response.text}")
             
-            # Extract and create attachments
-            attachments_data = request_data.extract_attachments_data()
-            for attachment_data in attachments_data:
-                attachment_data['work_order_id'] = work_order.id
-                attachment_item = SupportingDocuments(**attachment_data)
-                self.db.add(attachment_item)
+            # Process attachments and files
+            self._process_attachments_and_files(request_data, work_order.id)
 
             # Extract and create work items
             work_items_data = request_data.extract_work_items_data()
@@ -113,10 +195,84 @@ class WorkOrdersService:
         except Exception as e:
             # Rollback database transaction on any other error
             self.db.rollback()
-            # Log the error for debugging
             print(f"Error creating work order: {str(e)}")
-            # Re-raise the exception or handle it as needed
             raise Exception(f"Failed to create work order: {str(e)}")
+    
+    def _process_attachments_and_files(self, request_data: WorkOrdersCreateRequest, work_order_id: int):
+        """Process attachments and upload files to MinIO"""
+        try:
+            attachments = json.loads(request_data.attachments)
+            
+            # Define mapping between form field names and attachment types
+            attachment_type_mapping = {
+                'layout': 'layout',
+                'documentation': 'documentation',
+                'photoImages': 'photo_images',
+                'billOfQuantity': 'bill_of_quantity'
+            }
+            
+            # Process each attachment type
+            for field_name, section_data in attachments.items():
+                if section_data.get('uploaded', False) and 'files' in section_data:
+                    document_type = attachment_type_mapping.get(field_name, field_name)
+                    
+                    # Create supporting document entry
+                    supporting_doc = SupportingDocuments(
+                        work_order_id=work_order_id,
+                        document_type=document_type,
+                        has_document=True
+                    )
+                    self.db.add(supporting_doc)
+                    self.db.flush()
+                    
+                    # Process each file in this section
+                    files = section_data['files']
+                    for i in range(0, len(files), 2):
+                        if i + 1 < len(files):
+                            # Get filename and filecontent (they come in pairs)
+                            file_info = files[i]
+                            content_info = files[i + 1] if i + 1 < len(files) else {}
+                            
+                            if isinstance(file_info, dict) and 'filename' in file_info:
+                                file_name = file_info['filename']
+                                
+                                # Look for filecontent
+                                file_content = None
+                                
+                                # Check if filecontent is in content_info
+                                if isinstance(content_info, dict) and 'filecontent' in content_info:
+                                    file_content = content_info['filecontent']
+                                
+                                # Try to find filecontent in file_info as well
+                                elif 'filecontent' in file_info:
+                                    file_content = file_info['filecontent']
+                                
+                                if file_content:
+                                    try:
+                                        # Upload to MinIO
+                                        file_url, file_size = self._upload_to_minio(file_name, file_content)
+                                        
+                                        # Store file info in database
+                                        work_order_file = WorkOrderFiles(
+                                            work_order_id=work_order_id,
+                                            supporting_document_id=supporting_doc.id,
+                                            file_name=file_name,
+                                            file_url=file_url,
+                                            file_size=file_size
+                                        )
+                                        self.db.add(work_order_file)
+                                        print(f"Uploaded {file_name} to MinIO: {file_url}")
+                                        
+                                    except Exception as e:
+                                        print(f"Failed to upload {file_name}: {e}")
+                                        continue
+                        
+        except json.JSONDecodeError as e:
+            print(f"Error parsing attachments JSON: {e}")
+            raise Exception(f"Invalid attachments JSON format: {str(e)}")
+        except Exception as e:
+            print(f"Error processing files: {e}")
+            raise Exception(f"Failed to process files: {str(e)}")
     
     def update_work_order_from_request(self, work_orders_id: int, request_data: WorkOrdersCreateRequest) -> Dict[str, Any]:
         """Update existing work order from the complex request payload"""
@@ -143,11 +299,13 @@ class WorkOrdersService:
             SupportingDocuments.work_order_id == work_orders_id
         ).delete()
         
-        attachments_data = request_data.extract_attachments_data()
-        for attachment_data in attachments_data:
-            attachment_data['work_order_id'] = work_orders_id
-            attachment_item = SupportingDocuments(**attachment_data)
-            self.db.add(attachment_item)
+        # Remove existing files
+        self.db.query(WorkOrderFiles).filter(
+            WorkOrderFiles.work_order_id == work_orders_id
+        ).delete()
+        
+        # Process new attachments and files
+        self._process_attachments_and_files(request_data, work_orders_id)
         
         # Remove existing work items and create new ones
         self.db.query(WorkOrderItems).filter(
@@ -205,7 +363,8 @@ class WorkOrdersService:
                 joinedload(WorkOrders.work_items),
                 joinedload(WorkOrders.vendors),
                 joinedload(WorkOrders.supporting_documents),
-                joinedload(WorkOrders.authorizations) 
+                joinedload(WorkOrders.authorizations),
+                joinedload(WorkOrders.files)
             )
             .filter(WorkOrders.id == work_orders_id)
             .first()
@@ -216,7 +375,7 @@ class WorkOrdersService:
         
         # Build response matching POST request structure PLUS id at root
         response = {
-            "id": work_order.id,  # Add this top-level id field
+            "id": work_order.id,
             "workOrder": {
                 "id": work_order.id,
                 "documentNumber": work_order.document_number,
@@ -263,16 +422,37 @@ class WorkOrdersService:
                 }
                 for vendor in work_order.vendors
             ],
-            'supportingDocuments': [  # ADD THIS - transform supporting_documents
-            {
-                'id': doc.id,
-                'workOrderId': doc.work_order_id,
-                'documentType': doc.document_type,
-                'hasDocument': bool(doc.has_document),
-            }
-            for doc in work_order.supporting_documents
-        ],
-            # ADD THIS: Transform authorizations back to original format
+            'supportingDocuments': [
+                {
+                    'id': doc.id,
+                    'workOrderId': doc.work_order_id,
+                    'documentType': doc.document_type,
+                    'hasDocument': bool(doc.has_document),
+                    'files': [
+                        {
+                            'id': file.id,
+                            'fileName': file.file_name,
+                            'fileUrl': file.file_url,
+                            'fileSize': file.file_size,
+                            'uploadDate': file.upload_date.isoformat() if file.upload_date else None
+                        }
+                        for file in doc.files
+                    ]
+                }
+                for doc in work_order.supporting_documents
+            ],
+            'files': [
+                {
+                    'id': file.id,
+                    'workOrderId': file.work_order_id,
+                    'supportingDocumentId': file.supporting_document_id,
+                    'fileName': file.file_name,
+                    'fileUrl': file.file_url,
+                    'fileSize': file.file_size,
+                    'uploadDate': file.upload_date.isoformat() if file.upload_date else None
+                }
+                for file in work_order.files
+            ],
             'authorizations': [self._format_authorizations_response(work_order.authorizations)],
             "totalCost": float(sum(
                 item.quantity * item.unit_price 
@@ -410,7 +590,6 @@ class WorkOrdersService:
         """Count total work_orders records"""
         return self.db.query(WorkOrders).count()
     
-
     def generate_next_document_number(self, submitted_by: str) -> str:
         """
         Generate the next document number in format: {number}/WOR/{submitted_by}:NMP/N/{currentyear}
@@ -424,15 +603,11 @@ class WorkOrdersService:
         2. Increment by 1
         3. Pad with leading zeros to 4 digits
         """
-        from sqlalchemy import extract, func
+        from sqlalchemy import extract
         
         current_year = datetime.now().year
         
         # Query for the highest document number for this submitted_by in current year
-        # Using pattern matching to extract the number part
-        from sqlalchemy import text
-        
-        # Get all document numbers for this submitted_by in current year
         query = self.db.query(WorkOrders.document_number).filter(
             WorkOrders.submitted_by == submitted_by,
             extract('year', WorkOrders.request_date) == current_year
