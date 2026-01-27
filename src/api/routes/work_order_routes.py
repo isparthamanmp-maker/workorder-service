@@ -126,17 +126,17 @@ def update_work_orders(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.put("/{work_orders_id}/complex", status_code=status.HTTP_201_CREATED)
+@router.put("/{work_orders_id}/complex", status_code=status.HTTP_200_OK)  # Changed from 201 to 200 for updates
 def update_complex_work_order(
     work_orders_id: int,
     request_data: WorkOrdersCreateRequest,
     work_orders_service: WorkOrdersService = Depends(get_work_orders_service)
 ):
-    """Create a new work order with complex payload (with work items)"""
+    """Update an existing work order with complex payload (with work items)"""
     try:
         result = work_orders_service.update_work_order_from_request(work_orders_id, request_data)
         return {
-            "message": "Work order created successfully",
+            "message": "Work order updated successfully",
             "work_order_id": result["work_order"].id,
             "document_number": result["work_order"].document_number,
             "work_items_count": result["work_items_count"],

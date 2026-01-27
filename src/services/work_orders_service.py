@@ -213,7 +213,7 @@ class WorkOrdersService:
             
             # Process each attachment type
             for field_name, section_data in attachments.items():
-                if section_data.get('uploaded', False) and 'files' in section_data:
+                if isinstance(section_data, dict) and section_data.get('uploaded', False) and 'files' in section_data:
                     document_type = attachment_type_mapping.get(field_name, field_name)
                     
                     # Create supporting document entry
@@ -227,46 +227,59 @@ class WorkOrdersService:
                     
                     # Process each file in this section
                     files = section_data['files']
-                    for i in range(0, len(files), 2):
-                        if i + 1 < len(files):
-                            # Get filename and filecontent (they come in pairs)
-                            file_info = files[i]
-                            content_info = files[i + 1] if i + 1 < len(files) else {}
-                            
-                            if isinstance(file_info, dict) and 'filename' in file_info:
-                                file_name = file_info['filename']
+                    if isinstance(files, list):
+                        for i in range(0, len(files), 2):
+                            if i < len(files):
+                                # Get file info
+                                file_info = files[i]
                                 
-                                # Look for filecontent
-                                file_content = None
-                                
-                                # Check if filecontent is in content_info
-                                if isinstance(content_info, dict) and 'filecontent' in content_info:
-                                    file_content = content_info['filecontent']
-                                
-                                # Try to find filecontent in file_info as well
-                                elif 'filecontent' in file_info:
-                                    file_content = file_info['filecontent']
-                                
-                                if file_content:
-                                    try:
-                                        # Upload to MinIO
-                                        file_url, file_size = self._upload_to_minio(file_name, file_content)
-                                        
-                                        # Store file info in database
-                                        work_order_file = WorkOrderFiles(
-                                            work_order_id=work_order_id,
-                                            supporting_document_id=supporting_doc.id,
-                                            file_name=file_name,
-                                            file_url=file_url,
-                                            file_size=file_size
-                                        )
-                                        self.db.add(work_order_file)
-                                        print(f"Uploaded {file_name} to MinIO: {file_url}")
-                                        
-                                    except Exception as e:
-                                        print(f"Failed to upload {file_name}: {e}")
-                                        continue
-                        
+                                if isinstance(file_info, dict) and 'filename' in file_info:
+                                    file_name = file_info['filename']
+                                    
+                                    # Look for filecontent
+                                    file_content = None
+                                    
+                                    # Check if filecontent is in the same dict
+                                    if 'filecontent' in file_info:
+                                        file_content = file_info['filecontent']
+                                    
+                                    # Check if there's a next item with filecontent
+                                    elif i + 1 < len(files):
+                                        next_item = files[i + 1]
+                                        if isinstance(next_item, dict) and 'filecontent' in next_item:
+                                            file_content = next_item['filecontent']
+                                    
+                                    if file_content and isinstance(file_content, str):
+                                        try:
+                                            # Upload to MinIO
+                                            file_url, file_size = self._upload_to_minio(file_name, file_content)
+                                            
+                                            # Store file info in database
+                                            work_order_file = WorkOrderFiles(
+                                                work_order_id=work_order_id,
+                                                supporting_document_id=supporting_doc.id,
+                                                file_name=file_name,
+                                                file_url=file_url,
+                                                file_size=file_size
+                                            )
+                                            self.db.add(work_order_file)
+                                            print(f"Uploaded {file_name} to MinIO: {file_url}")
+                                            
+                                        except Exception as e:
+                                            print(f"Failed to upload {file_name}: {e}")
+                                            continue
+                    else:
+                        print(f"Files for {field_name} is not a list: {type(files)}")
+                elif section_data.get('uploaded', False):
+                    # Create supporting document entry even if no files
+                    document_type = attachment_type_mapping.get(field_name, field_name)
+                    supporting_doc = SupportingDocuments(
+                        work_order_id=work_order_id,
+                        document_type=document_type,
+                        has_document=False
+                    )
+                    self.db.add(supporting_doc)
+            
         except json.JSONDecodeError as e:
             print(f"Error parsing attachments JSON: {e}")
             raise Exception(f"Invalid attachments JSON format: {str(e)}")
@@ -274,7 +287,32 @@ class WorkOrdersService:
             print(f"Error processing files: {e}")
             raise Exception(f"Failed to process files: {str(e)}")
     
-    # src/services/work_orders_service.py - Update the update_work_order_from_request method
+
+    def _delete_files_from_minio(self, files: List[WorkOrderFiles]):
+        """Delete files from MinIO storage"""
+        for file in files:
+            try:
+                # Extract object name from URL
+                # URL format: http://10.10.1.7:9000/workorder/{object_name}
+                if file.file_url:
+                    # Parse the URL to get the object name
+                    url_parts = file.file_url.split(f'/{self.bucket_name}/')
+                    if len(url_parts) > 1:
+                        object_name = url_parts[1]
+                        
+                        # Delete from MinIO
+                        self.minio_client.remove_object(
+                            bucket_name=self.bucket_name,
+                            object_name=object_name
+                        )
+                        print(f"Deleted file from MinIO: {object_name}")
+                    else:
+                        print(f"Could not parse object name from URL: {file.file_url}")
+            except Exception as e:
+                print(f"Error deleting file from MinIO (file_id={file.id}, url={file.file_url}): {e}")
+                # Don't raise exception here, continue with other files
+                # The database deletion will still happen
+                
     def update_work_order_from_request(self, work_orders_id: int, request_data: WorkOrdersCreateRequest) -> Dict[str, Any]:
         """Update existing work order from the complex request payload"""
         
@@ -296,7 +334,15 @@ class WorkOrdersService:
             # Update the updated_at timestamp
             existing_work_order.updated_at = datetime.utcnow()
             
-            # --- FIX: Delete child records first to avoid foreign key constraint violation ---
+            # --- DELETE EXISTING DATA AND FILES FROM MINIO ---
+            
+            # Get all existing files before deletion
+            existing_files = self.db.query(WorkOrderFiles).filter(
+                WorkOrderFiles.work_order_id == work_orders_id
+            ).all()
+            
+            # Delete files from MinIO
+            self._delete_files_from_minio(existing_files)
             
             # 1. First delete work_order_files that reference supporting_documents
             # Find all supporting_document_ids for this work order
@@ -323,14 +369,26 @@ class WorkOrdersService:
                 WorkOrderFiles.work_order_id == work_orders_id
             ).delete(synchronize_session=False)
             
-            # Process new attachments and files
-            self._process_attachments_and_files(request_data, work_orders_id)
-            
-            # Remove existing work items and create new ones
+            # 4. Delete other related records
             self.db.query(WorkOrderItems).filter(
                 WorkOrderItems.work_order_id == work_orders_id
             ).delete(synchronize_session=False)
             
+            self.db.query(WorkOrderVendors).filter(
+                WorkOrderVendors.work_order_id == work_orders_id
+            ).delete(synchronize_session=False)
+            
+            self.db.query(Authorizations).filter(
+                Authorizations.work_order_id == work_orders_id
+            ).delete(synchronize_session=False)
+            
+            # Flush to apply deletions
+            self.db.flush()
+            
+            # Process new attachments and files
+            self._process_attachments_and_files(request_data, work_orders_id)
+            
+            # Extract and create work items
             work_items_data = request_data.extract_work_items_data()
             for item_data in work_items_data:
                 item_data['work_order_id'] = work_orders_id
@@ -338,21 +396,14 @@ class WorkOrdersService:
                 work_item = WorkOrderItems(**item_data)
                 self.db.add(work_item)
             
-            # Remove existing vendor data and create new ones
-            self.db.query(WorkOrderVendors).filter(
-                WorkOrderVendors.work_order_id == work_orders_id
-            ).delete(synchronize_session=False)
-            
+            # Extract and create vendor data
             vendors_data = request_data.extract_vendor_data()
             for vendor_data in vendors_data:
                 vendor_data['work_order_id'] = work_orders_id
                 work_vendor = WorkOrderVendors(**vendor_data)
                 self.db.add(work_vendor)
             
-            self.db.query(Authorizations).filter(
-                Authorizations.work_order_id == work_orders_id
-            ).delete(synchronize_session=False)
-            
+            # Extract and create authorizations data
             authorizations_data = request_data.extract_authorizations_data()
             for auth_data in authorizations_data:
                 auth_data['work_order_id'] = work_orders_id
@@ -371,7 +422,7 @@ class WorkOrdersService:
             }
             
             return response
-        
+    
         except Exception as e:
             self.db.rollback()
             print(f"Error updating work order: {str(e)}")
