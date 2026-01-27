@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from typing import List, Optional
 from src.services.work_orders_service import WorkOrdersService
 from src.api.dependencies import get_work_orders_service
-from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersResponse, WorkOrdersCreateRequest, WorkOrdersFullResponse, DocumentNumberResponse
+from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersResponse, WorkOrdersCreateRequest, WorkOrdersFullResponse, DocumentNumberResponse, WorkOrdersUpdateRequest
 from datetime import datetime
 
 router = APIRouter(prefix="/api/v1/work_orders", tags=["work_orders"])  # Fixed typo: work_orderss -> work_orders
@@ -126,15 +126,62 @@ def update_work_orders(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.put("/{work_orders_id}/complex", status_code=status.HTTP_200_OK)  # Changed from 201 to 200 for updates
+@router.put("/{work_orders_id}/complex", status_code=status.HTTP_200_OK)
 def update_complex_work_order(
     work_orders_id: int,
-    request_data: WorkOrdersCreateRequest,
+    request_data: WorkOrdersUpdateRequest,
     work_orders_service: WorkOrdersService = Depends(get_work_orders_service)
 ):
-    """Update an existing work order with complex payload (with work items)"""
+    """Update an existing work order (accepts GET response structure)"""
     try:
-        result = work_orders_service.update_work_order_from_request(work_orders_id, request_data)
+        print("\n" + "=" * 80)
+        print("UPDATE COMPLEX WORK ORDER CALLED")
+        print(f"Work Order ID: {work_orders_id}")
+        print("=" * 80)
+        
+        # Convert to create request format
+        print("Converting to create request format...")
+        create_request = request_data.convert_to_create_request_format()
+        
+        print("\nConverted Create Request:")
+        print(f"Name: {create_request.name}")
+        print(f"Total Cost: {create_request.totalCost}")
+        
+        # Show attachments structure
+        try:
+            import json
+            attachments = json.loads(create_request.attachments)
+            print(f"\nAttachments structure:")
+            for field_name, section_data in attachments.items():
+                print(f"\n{field_name}:")
+                print(f"  uploaded: {section_data.get('uploaded')}")
+                files = section_data.get('files', [])
+                print(f"  files count: {len(files)}")
+                for i, file in enumerate(files):
+                    print(f"  File {i+1}:")
+                    print(f"    filename: {file.get('filename')}")
+                    print(f"    action: {file.get('action')}")
+                    content = file.get('filecontent', '')
+                    print(f"    content length: {len(content)}")
+                    if content:
+                        print(f"    content exists: YES")
+        except Exception as e:
+            print(f"Error parsing attachments: {e}")
+        
+        # Update with special handling for files
+        print("\nCalling update_work_order_with_existing_files...")
+        result = work_orders_service.update_work_order_with_existing_files(
+            work_orders_id, 
+            create_request,
+            request_data.supportingDocuments  # Pass original to check file actions
+        )
+        
+        print(f"\nUpdate successful!")
+        print(f"Work Order ID: {result['work_order'].id}")
+        print(f"Document Number: {result['work_order'].document_number}")
+        print(f"Work Items Count: {result['work_items_count']}")
+        print(f"Total Cost: {result['total_cost']}")
+        
         return {
             "message": "Work order updated successfully",
             "work_order_id": result["work_order"].id,
@@ -143,6 +190,9 @@ def update_complex_work_order(
             "total_cost": result["total_cost"]
         }
     except Exception as e:
+        print(f"\nERROR in update_complex_work_order: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.delete("/{work_orders_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -154,3 +204,78 @@ def delete_work_orders(
     if not work_orders_service.delete_work_orders(work_orders_id):
         raise HTTPException(status_code=404, detail=f"{pascal_name} not found")
     
+
+@router.put("/{work_orders_id}/debug", status_code=status.HTTP_200_OK)
+def debug_update_work_order(
+    work_orders_id: int,
+    request_data: WorkOrdersUpdateRequest,
+    work_orders_service: WorkOrdersService = Depends(get_work_orders_service)
+):
+    """Debug endpoint to see what's in the payload"""
+    import json
+    from pprint import pprint
+    
+    print("=" * 80)
+    print("DEBUG: Received PUT payload structure")
+    print("=" * 80)
+    
+    # Show the structure
+    data_dict = request_data.dict()
+    
+    print("\n1. SUPPORTING DOCUMENTS:")
+    for i, doc in enumerate(data_dict.get('supportingDocuments', [])):
+        print(f"\n  Document {i+1}: {doc.get('documentType')}")
+        print(f"  Has Document: {doc.get('hasDocument')}")
+        print(f"  Files count: {len(doc.get('files', []))}")
+        
+        for j, file in enumerate(doc.get('files', [])):
+            print(f"\n    File {j+1}:")
+            print(f"      fileName: {file.get('fileName')}")
+            print(f"      fileId: {file.get('fileId')}")
+            print(f"      action: {file.get('action')}")
+            
+            # Check for file content
+            has_content = 'fileContent' in file or 'filecontent' in file
+            content_length = 0
+            if 'fileContent' in file:
+                content_length = len(str(file.get('fileContent', '')))
+            elif 'filecontent' in file:
+                content_length = len(str(file.get('filecontent', '')))
+            
+            print(f"      Has fileContent: {has_content}")
+            print(f"      Content length: {content_length}")
+            
+            if has_content and content_length > 0:
+                # Show first 100 chars of content
+                content = file.get('fileContent') or file.get('filecontent')
+                print(f"      Content preview: {str(content)[:100]}...")
+    
+    print("\n" + "=" * 80)
+    print("Converted Create Request:")
+    print("=" * 80)
+    
+    # Convert and show
+    create_request = request_data.convert_to_create_request_format()
+    
+    # Parse attachments to see structure
+    try:
+        attachments = json.loads(create_request.attachments)
+        print("\nAttachments JSON structure:")
+        for field_name, section_data in attachments.items():
+            print(f"\n{field_name}:")
+            print(f"  uploaded: {section_data.get('uploaded')}")
+            files = section_data.get('files', [])
+            print(f"  files count: {len(files)}")
+            
+            for i, file in enumerate(files):
+                print(f"\n  File {i+1}:")
+                print(f"    filename: {file.get('filename')}")
+                print(f"    action: {file.get('action')}")
+                content = file.get('filecontent', '')
+                print(f"    content length: {len(content)}")
+                if content:
+                    print(f"    content preview: {content[:50]}...")
+    except Exception as e:
+        print(f"Error parsing attachments: {e}")
+    
+    return {"message": "Debug info printed to console"}

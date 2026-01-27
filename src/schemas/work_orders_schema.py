@@ -400,3 +400,254 @@ class DocumentNumberResponse(BaseModel):
             datetime: lambda v: v.isoformat() if v else None,
         }
     )
+
+class WorkOrdersUpdateRequest(BaseModel):
+    """Schema for updating work orders (accepts GET response structure)"""
+    workOrder: dict
+    workItems: List[dict]
+    tenderVendorData: List[dict]
+    supportingDocuments: List[dict]
+    authorizations: List[dict]
+    totalCost: Optional[float] = 0.0
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
+            date: lambda v: v.isoformat() if v else None,
+            datetime: lambda v: v.isoformat() if v else None,
+        }
+    )
+
+    def convert_to_create_request_format(self) -> WorkOrdersCreateRequest:
+        """Convert update format to create request format"""
+        import json
+        
+        print("\n" + "=" * 80)
+        print("CONVERT TO CREATE REQUEST FORMAT - DEBUG")
+        print("=" * 80)
+        
+        # Debug: Show ALL files in original payload
+        print(f"\n1. ORIGINAL PAYLOAD - ALL FILES:")
+        total_files = 0
+        for i, doc in enumerate(self.supportingDocuments):
+            doc_files = doc.get('files', [])
+            total_files += len(doc_files)
+            print(f"\n   Document {i+1}: {doc.get('documentType')}")
+            print(f"   Files count: {len(doc_files)}")
+            
+            for j, file in enumerate(doc_files):
+                print(f"\n     File {j+1}:")
+                print(f"       fileName: {file.get('fileName')}")
+                print(f"       fileId: {file.get('fileId')}")
+                print(f"       action: {file.get('action')}")
+                print(f"       fileSize: {file.get('fileSize')}")
+                
+                # Check ALL content fields
+                content = None
+                for field in ['fileContent', 'filecontent', 'content']:
+                    if field in file:
+                        content = file[field]
+                        print(f"       Found in '{field}': length={len(str(content))}")
+                        break
+                
+                if not content:
+                    print(f"       NO CONTENT FOUND!")
+        
+        print(f"\nTOTAL FILES IN ORIGINAL PAYLOAD: {total_files}")
+        
+        # Convert workOrder to formData JSON string
+        form_data_dict = {
+            "worNo": self.workOrder.get("documentNumber", ""),
+            "date": self.workOrder.get("requestDate", ""),
+            "requestType": "work_order_request" if self.workOrder.get("requestType") == "work_order_request" else "item_request",
+            "submittedBy": self.workOrder.get("submittedBy", ""),
+            "submittedDivision": self.workOrder.get("submittedBy", ""),
+            "scopeOfWork": self.workOrder.get("scopeOfWorks", ""),
+            "startDate": self.workOrder.get("startDate", ""),
+            "endDate": self.workOrder.get("endDate", ""),
+            "isUrgent": bool(self.workOrder.get("isUrgent", False)),
+            "isBudgeted": self.workOrder.get("budgetStatus") == "budgeted",
+            "costType": self.workOrder.get("costType", "CAPEX"),
+            "budgetIndex": self.workOrder.get("budgetIndex", ""),
+            "budgetName": self.workOrder.get("budgetName", ""),
+            "costEstimation": float(self.workOrder.get("costEstimation", 0)),
+            "budgetRemaining": float(self.workOrder.get("remainingBudget", 0)),
+            "budgetUnderOver": self.workOrder.get("underOver", ""),
+            "chargeToTenant": bool(self.workOrder.get("chargeToTenant", False)),
+            "vendorName": self.workOrder.get("recommendedContractor", ""),
+            "vendorReason": self.workOrder.get("reason", ""),
+            "vendorSelectionMethod": self.workOrder.get("vendorSelectionMethod", "tender_process"),
+            "isWOR": self.workOrder.get("requestType") == "work_order_request",
+        }
+        
+        # Convert workItems to JSON string
+        work_items_list = []
+        for item in self.workItems:
+            work_items_list.append({
+                "description": item.get("description", ""),
+                "quantity": float(item.get("quantity", 1)),
+                "unitPrice": float(item.get("unitPrice", 0))
+            })
+        
+        # Convert attachments to JSON string - FIXED VERSION
+        print(f"\n2. PROCESSING EACH FILE FOR CONVERSION:")
+        
+        attachments_dict = {}
+        
+        # Mapping from database document_type to frontend field names
+        field_mapping = {
+            "layout": "layout",
+            "documentation": "documentation", 
+            "photo_images": "photoImages",
+            "bill_of_quantity": "billOfQuantity"
+        }
+        
+        files_converted = 0
+        files_skipped = 0
+        
+        for doc in self.supportingDocuments:
+            original_doc_type = doc.get("documentType", "")
+            
+            # Map to frontend field name
+            field_name = None
+            for frontend_name, backend_name in field_mapping.items():
+                if backend_name == original_doc_type or frontend_name == original_doc_type:
+                    field_name = frontend_name
+                    break
+            
+            if not field_name:
+                field_name = original_doc_type  # fallback
+            
+            # Process files
+            files = doc.get("files", [])
+            file_list = []
+            
+            print(f"\n   Processing document: {original_doc_type} -> {field_name}")
+            print(f"   Found {len(files)} file(s)")
+            
+            for i, file in enumerate(files):
+                print(f"\n     File {i+1}:")
+                
+                # Get filename
+                file_name = file.get('fileName') or file.get('filename') or f"file_{i+1}"
+                print(f"       Filename: {file_name}")
+                
+                # Get action
+                action = file.get('action', 'new')
+                print(f"       Action: {action}")
+                
+                # Get file content
+                file_content = None
+                for field in ['fileContent', 'filecontent', 'content']:
+                    if field in file:
+                        file_content = file[field]
+                        print(f"       Content from '{field}': length={len(str(file_content))}")
+                        break
+                
+                if not file_content:
+                    print(f"       No content found in any field")
+                
+                # ALWAYS add to file_list, even if no content (we'll handle it later)
+                if action in ['existing', 'keep', 'unchanged']:
+                    print(f"       → Will be added as existing file")
+                    file_list.append({
+                        "filename": file_name,
+                        "filecontent": "",  # Empty for existing files
+                        "action": "existing"
+                    })
+                    files_converted += 1
+                elif action in ['new', 'add', 'upload']:
+                    if file_content:
+                        print(f"       → Will be added as new file with content")
+                        file_list.append({
+                            "filename": file_name,
+                            "filecontent": file_content,
+                            "action": "new"
+                        })
+                        files_converted += 1
+                    else:
+                        print(f"       ⚠ WARNING: Action is '{action}' but no content found")
+                        print(f"       → Will be added as empty file")
+                        file_list.append({
+                            "filename": file_name,
+                            "filecontent": "",
+                            "action": "existing"  # Treat as existing since no content
+                        })
+                        files_converted += 1
+                else:
+                    print(f"       → Unknown action '{action}', will be added anyway")
+                    file_list.append({
+                        "filename": file_name,
+                        "filecontent": file_content or "",
+                        "action": "new" if file_content else "existing"
+                    })
+                    files_converted += 1
+            
+            # Determine if uploaded
+            uploaded = doc.get('hasDocument', False) or len(file_list) > 0
+            
+            attachments_dict[field_name] = {
+                "uploaded": uploaded,
+                "files": file_list
+            }
+            
+            print(f"   Result: uploaded={uploaded}, files added={len(file_list)}")
+        
+        print(f"\n3. CONVERSION SUMMARY:")
+        print(f"   Total files processed: {files_converted}")
+        print(f"   Total files skipped: {files_skipped}")
+        
+        print(f"\n4. FINAL attachments_dict:")
+        print(json.dumps(attachments_dict, indent=2))
+        
+        # Convert authorizations to JSON string
+        auth_dict = {}
+        for auth in self.authorizations:
+            role = auth.get("role", "")
+            name = auth.get("name", "")
+            date = auth.get("date", "")
+            
+            mapping = {
+                "prepared_by": ("preparedBy", "preparedDate"),
+                "department_head": ("deptHeadName", "deptHeadDate"),
+                "accounting_department": ("accDeptName", "accDeptDate"),
+                "business_manager": ("bmName", "bmDate"),
+                "director": ("directorName", "directorDate"),
+                "purchasing": ("purchasingName", "purchasingDate")
+            }
+            
+            if role in mapping:
+                name_field, date_field = mapping[role]
+                auth_dict[name_field] = name
+                auth_dict[date_field] = date
+        
+        # Convert tenderVendorData to JSON string
+        tender_dict = {
+            "isTenderRequired": len(self.tenderVendorData) > 0,
+            "tenderDescription": "",
+            "tenderDate": "",
+            "tenderEvaluationCriteria": "",
+            "vendors": []
+        }
+        
+        for vendor in self.tenderVendorData:
+            vendor_name = vendor.get("vendorName", "")
+            if vendor_name and vendor_name.strip():
+                tender_dict["vendors"].append({
+                    "id": vendor.get("id", 0),
+                    "vendorName": vendor_name.strip()
+                })
+        
+        # Calculate total cost
+        total_cost = self.totalCost or sum(item.get("totalPrice", 0) for item in self.workItems)
+        
+        # Create WorkOrdersCreateRequest
+        return WorkOrdersCreateRequest(
+            name=f"Work Order {self.workOrder.get('documentNumber', '')}",
+            formData=json.dumps(form_data_dict),
+            workItems=json.dumps(work_items_list),
+            attachments=json.dumps(attachments_dict),
+            authorizations=json.dumps(auth_dict),
+            tenderVendorData=json.dumps(tender_dict),
+            totalCost=total_cost
+        )
