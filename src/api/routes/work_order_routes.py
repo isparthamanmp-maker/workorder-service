@@ -138,49 +138,27 @@ def update_complex_work_order(
         print("UPDATE COMPLEX WORK ORDER CALLED")
         print(f"Work Order ID: {work_orders_id}")
         print("=" * 80)
+
+        print(f"Type of request_data.supportingDocuments: {type(request_data.supportingDocuments)}")
+        print(f"Type after dict(): {type(request_data.dict()['supportingDocuments'])}")
         
         # Convert to create request format
         print("Converting to create request format...")
         create_request = request_data.convert_to_create_request_format()
         
-        print("\nConverted Create Request:")
-        print(f"Name: {create_request.name}")
-        print(f"Total Cost: {create_request.totalCost}")
+        # Convert supportingDocuments to dict BEFORE passing
+        original_supporting_docs = request_data.dict()['supportingDocuments']
         
-        # Show attachments structure
-        try:
-            import json
-            attachments = json.loads(create_request.attachments)
-            print(f"\nAttachments structure:")
-            for field_name, section_data in attachments.items():
-                print(f"\n{field_name}:")
-                print(f"  uploaded: {section_data.get('uploaded')}")
-                files = section_data.get('files', [])
-                print(f"  files count: {len(files)}")
-                for i, file in enumerate(files):
-                    print(f"  File {i+1}:")
-                    print(f"    filename: {file.get('filename')}")
-                    print(f"    action: {file.get('action')}")
-                    content = file.get('filecontent', '')
-                    print(f"    content length: {len(content)}")
-                    if content:
-                        print(f"    content exists: YES")
-        except Exception as e:
-            print(f"Error parsing attachments: {e}")
+        print("\nConverted Create Request:")
+        print(f"Total Cost: {create_request.totalCost}")
         
         # Update with special handling for files
         print("\nCalling update_work_order_with_existing_files...")
         result = work_orders_service.update_work_order_with_existing_files(
             work_orders_id, 
             create_request,
-            request_data.supportingDocuments  # Pass original to check file actions
+            request_data.dict()['supportingDocuments']  # Get the raw list
         )
-        
-        print(f"\nUpdate successful!")
-        print(f"Work Order ID: {result['work_order'].id}")
-        print(f"Document Number: {result['work_order'].document_number}")
-        print(f"Work Items Count: {result['work_items_count']}")
-        print(f"Total Cost: {result['total_cost']}")
         
         return {
             "message": "Work order updated successfully",
@@ -248,7 +226,7 @@ def debug_update_work_order(
             if has_content and content_length > 0:
                 # Show first 100 chars of content
                 content = file.get('fileContent') or file.get('filecontent')
-                print(f"      Content preview: {str(content)[:100]}...")
+                # print(f"      Content preview: {str(content)[:100]}...")
     
     print("\n" + "=" * 80)
     print("Converted Create Request:")
@@ -259,7 +237,7 @@ def debug_update_work_order(
     
     # Parse attachments to see structure
     try:
-        attachments = json.loads(create_request.attachments)
+        attachments = json.loads(create_request.supportingDocuments)
         print("\nAttachments JSON structure:")
         for field_name, section_data in attachments.items():
             print(f"\n{field_name}:")
@@ -273,8 +251,8 @@ def debug_update_work_order(
                 print(f"    action: {file.get('action')}")
                 content = file.get('filecontent', '')
                 print(f"    content length: {len(content)}")
-                if content:
-                    print(f"    content preview: {content[:50]}...")
+                # if content:
+                #     print(f"    content preview: {content[:50]}...")
     except Exception as e:
         print(f"Error parsing attachments: {e}")
     

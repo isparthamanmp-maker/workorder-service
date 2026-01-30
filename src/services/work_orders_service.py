@@ -47,7 +47,7 @@ class WorkOrdersService:
             print(f"    Work order number: {work_order_number}")
             print(f"    File name: {file_name}")
             print(f"    Content length: {len(file_content)}")
-            print(f"    First 100 chars: {file_content[:100]}...")
+            # print(f"    First 100 chars: {file_content[:100]}...")
             
             # Clean content
             file_content_clean = file_content.replace(" ", "").replace("\n", "").replace("\r", "")
@@ -268,7 +268,7 @@ class WorkOrdersService:
             
             # Print structure for debugging
             print(f"\nDEBUG: Supporting documents structure:")
-            print(json.dumps(supporting_docs, indent=2))
+            # print(json.dumps(supporting_docs, indent=2))
             
             total_files_processed = 0
             
@@ -368,131 +368,7 @@ class WorkOrdersService:
             traceback.print_exc()
             raise
     
-    # UPDATE: Fix the update_work_order_from_request method to use supportingDocuments
-    def update_work_order_from_request(self, work_orders_id: int, request_data: WorkOrdersCreateRequest) -> Dict[str, Any]:
-        """Update existing work order from the complex request payload"""
-        
-        # First, get the existing work order
-        existing_work_order = self.db.query(WorkOrders).filter(WorkOrders.id == work_orders_id).first()
-        
-        if not existing_work_order:
-            raise HTTPException(status_code=404, detail="Work order not found")
-        
-        try:
-            # Extract work order data for update
-            work_order_data = request_data.extract_work_order_data()
-            
-            # Store the current work order number before update
-            current_work_order_number = existing_work_order.document_number
-            
-            # Update the existing work order
-            for key, value in work_order_data.items():
-                if hasattr(existing_work_order, key):
-                    setattr(existing_work_order, key, value)
-            
-            # Update the updated_at timestamp
-            existing_work_order.updated_at = datetime.utcnow()
-            
-            # Get updated work order number (in case it changed)
-            updated_work_order_number = existing_work_order.document_number
-            
-            print(f"\n{'='*80}")
-            print(f"UPDATING WORK ORDER (PUT)")
-            print(f"Work Order ID: {work_orders_id}")
-            print(f"Old Number: {current_work_order_number}")
-            print(f"New Number: {updated_work_order_number}")
-            print(f"{'='*80}\n")
-            
-            # --- DELETE EXISTING FILES FROM MINIO ---
-            # Delete files using work order number
-            print(f"Deleting MinIO files for work order: {current_work_order_number}")
-            self._delete_files_from_minio(current_work_order_number)
-            
-            # --- DELETE DATABASE RECORDS ---
-            
-            # 1. Get all files first (for potential backup/recovery)
-            existing_files = self.db.query(WorkOrderFiles).filter(
-                WorkOrderFiles.work_order_id == work_orders_id
-            ).all()
-            
-            # 2. Delete work_order_files
-            self.db.query(WorkOrderFiles).filter(
-                WorkOrderFiles.work_order_id == work_orders_id
-            ).delete(synchronize_session=False)
-            
-            # 3. Delete supporting_documents
-            self.db.query(SupportingDocuments).filter(
-                SupportingDocuments.work_order_id == work_orders_id
-            ).delete(synchronize_session=False)
-            
-            # 4. Delete other related records
-            self.db.query(WorkOrderItems).filter(
-                WorkOrderItems.work_order_id == work_orders_id
-            ).delete(synchronize_session=False)
-            
-            self.db.query(WorkOrderVendors).filter(
-                WorkOrderVendors.work_order_id == work_orders_id
-            ).delete(synchronize_session=False)
-            
-            self.db.query(Authorizations).filter(
-                Authorizations.work_order_id == work_orders_id
-            ).delete(synchronize_session=False)
-            
-            # Flush to apply deletions
-            self.db.flush()
-            
-            # --- PROCESS NEW FILES ---
-            # Use same method as POST
-            self._process_supporting_documents_put_style(request_data, work_orders_id, updated_work_order_number)
-            
-            # Extract and create work items
-            work_items_data = request_data.extract_work_items_data()
-            for item_data in work_items_data:
-                item_data['work_order_id'] = work_orders_id
-                item_data['total_price'] = item_data['quantity'] * item_data['unit_price']
-                work_item = WorkOrderItems(**item_data)
-                self.db.add(work_item)
-            
-            # Extract and create vendor data
-            vendors_data = request_data.extract_vendor_data()
-            for vendor_data in vendors_data:
-                vendor_data['work_order_id'] = work_orders_id
-                work_vendor = WorkOrderVendors(**vendor_data)
-                self.db.add(work_vendor)
-            
-            # Extract and create authorizations data
-            authorizations_data = request_data.extract_authorizations_data()
-            for auth_data in authorizations_data:
-                auth_data['work_order_id'] = work_orders_id
-                authorization = Authorizations(**auth_data)
-                self.db.add(authorization)
-                
-            # Commit transaction
-            self.db.commit()
-            self.db.refresh(existing_work_order)
-            
-            # Prepare response
-            response = {
-                "work_order": existing_work_order,
-                "work_items_count": len(work_items_data),
-                "total_cost": request_data.totalCost
-            }
-            
-            print(f"\n{'='*80}")
-            print(f"WORK ORDER UPDATED SUCCESSFULLY")
-            print(f"Work Order: {updated_work_order_number}")
-            print(f"Total Items: {len(work_items_data)}")
-            print(f"{'='*80}")
-            
-            return response
-        
-        except Exception as e:
-            self.db.rollback()
-            print(f"Error updating work order: {str(e)}")
-            raise Exception(f"Failed to update work order: {str(e)}")
-
-    # The rest of your methods remain the same...
-    # ... (keep all other methods unchanged)
+    
     
     def get_work_orders(self, work_orders_id: int) -> Optional[WorkOrders]:
         """Get work order with same structure as POST payload, plus id at root"""
@@ -795,31 +671,38 @@ class WorkOrdersService:
 
     def update_work_order_with_existing_files(self, work_orders_id: int, request_data: WorkOrdersCreateRequest, original_supporting_docs: List[dict]) -> Dict[str, Any]:
         """Update work order but preserve existing files marked as 'existing'"""
+        # Debug: Print the entire request_data
+        print(f"Request data type: {type(request_data)}")
+        print(f"Request data dict: {request_data.dict() if hasattr(request_data, 'dict') else request_data}")
         
         # Get existing work order
         existing_work_order = self.db.query(WorkOrders).filter(WorkOrders.id == work_orders_id).first()
+        print(f"Existing doc number: {existing_work_order.document_number}")
         
+        # Get existing work order
+        existing_work_order = self.db.query(WorkOrders).filter(WorkOrders.id == work_orders_id).first()
+        print(existing_work_order)
         if not existing_work_order:
             raise HTTPException(status_code=404, detail="Work order not found")
         
         try:
+           # Store work order number
+            work_order_number = existing_work_order.document_number
+
             # Extract work order data for update
             work_order_data = request_data.extract_work_order_data()
             
             # Update work order fields
             for key, value in work_order_data.items():
+                print(key, value)
                 if hasattr(existing_work_order, key):
                     setattr(existing_work_order, key, value)
+
+            existing_work_order.document_number=work_order_number
             
+            print(f"Existing doc number After loop: {existing_work_order.document_number}")
+
             existing_work_order.updated_at = datetime.utcnow()
-            
-            # Store work order number
-            work_order_number = existing_work_order.document_number
-            
-            # --- DELETE ONLY NEW/MODIFIED FILES, KEEP EXISTING ONES ---
-            
-            # Parse attachments to find which files to keep
-            attachments = json.loads(request_data.attachments)
             
             # Create a map of files to keep (based on action field)
             files_to_keep = []
@@ -934,137 +817,105 @@ class WorkOrdersService:
             print("STARTING FILE PROCESSING")
             print("=" * 80)
             
-            attachments = json.loads(request_data.attachments)
+            # FIX: Use supportingDocuments directly since it's already a list
+            attachments = request_data.supportingDocuments  # Remove json.loads()
+            
             print(f"Work Order ID: {work_order_id}")
             print(f"Work Order Number: {work_order_number}")
             
             # Show full attachments structure for debugging
             print("\nFull attachments structure received:")
-            print(json.dumps(attachments, indent=2))
+            # print(json.dumps(attachments, indent=2))
             
-            attachment_type_mapping = {
-                'layout': 'layout',
-                'documentation': 'documentation',
-                'photoImages': 'photo_images',
-                'billOfQuantity': 'bill_of_quantity'
-            }
-            
+            # Instead of the old field mapping, use the new structure directly
             total_new_files = 0
             total_existing_files = 0
             
-            # Process each attachment type
-            for field_name, section_data in attachments.items():
+            # Process each supporting document
+            for doc_idx, doc in enumerate(attachments):
                 print(f"\n{'='*40}")
-                print(f"Processing: {field_name}")
-                print(f"Section data: {json.dumps(section_data, indent=2)}")
+                print(f"Processing document {doc_idx + 1}:")
                 
-                if isinstance(section_data, dict):
-                    document_type = attachment_type_mapping.get(field_name, field_name)
-                    uploaded = section_data.get('uploaded', False)
-                    
-                    if not uploaded:
-                        print(f"Skipping {field_name} - not uploaded")
-                        continue
-                    
-                    # Create supporting document
+                document_type = doc.get('documentType', '')
+                has_document = doc.get('hasDocument', False)
+                files = doc.get('files', [])
+                
+                print(f"Document Type: {document_type}")
+                print(f"Has Document: {has_document}")
+                print(f"Number of files: {len(files)}")
+                
+                if not has_document or len(files) == 0:
+                    print(f"Skipping - no document or no files")
+                    # Still create supporting document record
                     supporting_doc = SupportingDocuments(
                         work_order_id=work_order_id,
                         document_type=document_type,
-                        has_document=uploaded
+                        has_document=False
                     )
                     self.db.add(supporting_doc)
-                    self.db.flush()
-                    print(f"Created supporting document ID: {supporting_doc.id}")
+                    continue
+                
+                # Create supporting document
+                supporting_doc = SupportingDocuments(
+                    work_order_id=work_order_id,
+                    document_type=document_type,
+                    has_document=True
+                )
+                self.db.add(supporting_doc)
+                self.db.flush()
+                print(f"Created supporting document: ID={supporting_doc.id}, Type={document_type}")
+                
+                # Process files
+                for file_idx, file_item in enumerate(files):
+                    print(f"\n  Processing file {file_idx + 1}:")
+                    print(f"    Raw item: {file_item}")
                     
-                    # Process files
-                    if 'files' in section_data:
-                        files = section_data['files']
-                        if isinstance(files, list):
-                            print(f"Found {len(files)} file(s) to process")
+                    if isinstance(file_item, dict):
+                        # Extract all possible keys for debugging
+                        all_keys = list(file_item.keys())
+                        print(f"    Keys found: {all_keys}")
+                        
+                        # Get filename from any possible key
+                        file_name = None
+                        for key in ['fileName', 'filename', 'name']:
+                            if key in file_item:
+                                file_name = file_item[key]
+                                print(f"    Found filename in key '{key}': {file_name}")
+                                break
+                        
+                        # Get file content from any possible key
+                        file_content = None
+                        for key in ['fileContent', 'filecontent', 'content']:
+                            if key in file_item:
+                                file_content = file_item[key]
+                                print(f"    Found content in key '{key}', length: {len(file_content)}")
+                                break
+                        
+                        # Get action
+                        action = file_item.get('action', 'new')
+                        print(f"    Action: {action}")
+                        
+                        if not file_name:
+                            print(f"    ERROR: No filename found!")
+                            continue
+                        
+                        if action == 'existing':
+                            # Handle existing file
+                            print(f"    Handling as existing file")
+                            file_url = f"http://10.10.1.7:9000/{self.bucket_name}/{work_order_number}/{file_name}"
                             
-                            for i, file_item in enumerate(files):
-                                print(f"\n  Processing file {i+1}:")
-                                print(f"    Raw item: {file_item}")
-                                
-                                if isinstance(file_item, dict):
-                                    # Extract all possible keys for debugging
-                                    all_keys = list(file_item.keys())
-                                    print(f"    Keys found: {all_keys}")
-                                    
-                                    # Get filename from any possible key
-                                    file_name = None
-                                    for key in ['filename', 'fileName', 'Filename']:
-                                        if key in file_item:
-                                            file_name = file_item[key]
-                                            print(f"    Found filename in key '{key}': {file_name}")
-                                            break
-                                    
-                                    # Get file content from any possible key
-                                    file_content = None
-                                    for key in ['filecontent', 'fileContent', 'content', 'filecontent_hex']:
-                                        if key in file_item:
-                                            file_content = file_item[key]
-                                            print(f"    Found content in key '{key}', length: {len(file_content)}")
-                                            break
-                                    
-                                    # Get action
-                                    action = file_item.get('action', 'new')
-                                    print(f"    Action: {action}")
-                                    
-                                    if not file_name:
-                                        print(f"    ERROR: No filename found!")
-                                        continue
-                                    
-                                    if action == 'existing':
-                                        # Handle existing file
-                                        print(f"    Handling as existing file")
-                                        file_url = f"http://10.10.1.7:9000/{self.bucket_name}/{work_order_number}/{file_name}"
-                                        
-                                        work_order_file = WorkOrderFiles(
-                                            work_order_id=work_order_id,
-                                            supporting_document_id=supporting_doc.id,
-                                            file_name=file_name,
-                                            file_url=file_url,
-                                            file_size=0
-                                        )
-                                        self.db.add(work_order_file)
-                                        total_existing_files += 1
-                                        print(f"    ✓ Added existing file to database: {file_name}")
-                                        
-                                    elif file_content and len(file_content) > 10:
-                                        # Handle new file with content
-                                        print(f"    Handling as NEW file with content")
-                                        try:
-                                            print(f"    Attempting upload to MinIO...")
-                                            file_url, file_size = self._upload_to_minio(
-                                                work_order_number,
-                                                file_name,
-                                                file_content
-                                            )
-                                            
-                                            work_order_file = WorkOrderFiles(
-                                                work_order_id=work_order_id,
-                                                supporting_document_id=supporting_doc.id,
-                                                file_name=file_name,
-                                                file_url=file_url,
-                                                file_size=file_size
-                                            )
-                                            self.db.add(work_order_file)
-                                            total_new_files += 1
-                                            print(f"    ✓ UPLOADED NEW FILE: {file_name}")
-                                            print(f"    ✓ URL: {file_url}")
-                                            print(f"    ✓ Size: {file_size} bytes")
-                                            
-                                        except Exception as e:
-                                            print(f"    ✗ FAILED to upload {file_name}: {e}")
-                                            import traceback
-                                            traceback.print_exc()
-                                    else:
-                                        print(f"    WARNING: File has no content or content too short: {file_name}")
-                                        print(f"    Content length: {len(file_content) if file_content else 0}")
-                                else:
-                                    print(f"    WARNING: File item is not a dict: {type(file_item)}")
-                        else:
+                            work_order_file = WorkOrderFiles(
+                                work_order_id=work_order_id,
+                                supporting_document_id=supporting_doc.id,
+                                file_name=file_name,
+                                file_url=file_url,
+                                file_size=0  # Size unknown for existing files
+                            )
+                            self.db.add(work_order_file)
+                            total_existing_files += 1
+                            print(f"    ✓ Added existing file to database: {file_name}")
+                            
+                        elif action in ['new', 'add']:
                             # Handle new file with content
                             print(f"    Handling as NEW file with content")
                             try:
@@ -1092,10 +943,21 @@ class WorkOrdersService:
                                 print(f"    ✗ FAILED to upload {file_name}: {e}")
                                 import traceback
                                 traceback.print_exc()
+                        else:
+                            print(f"    WARNING: Unknown action '{action}', treating as existing")
+                            file_url = f"http://10.10.1.7:9000/{self.bucket_name}/{work_order_number}/{file_name}"
+                            
+                            work_order_file = WorkOrderFiles(
+                                work_order_id=work_order_id,
+                                supporting_document_id=supporting_doc.id,
+                                file_name=file_name,
+                                file_url=file_url,
+                                file_size=0
+                            )
+                            self.db.add(work_order_file)
+                            total_existing_files += 1
                     else:
-                        print(f"No files in this section")
-                else:
-                    print(f"ERROR: Section data is not a dict: {type(section_data)}")
+                        print(f"    WARNING: File item is not a dict: {type(file_item)}")
             
             print("\n" + "=" * 80)
             print(f"PROCESSING COMPLETE")

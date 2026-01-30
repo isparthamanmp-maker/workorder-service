@@ -376,24 +376,14 @@ class WorkOrdersUpdateRequest(BaseModel):
         """Convert update format to create request format"""
         import json
         
-        total_files = 0
-        for i, doc in enumerate(self.supportingDocuments):
-            doc_files = doc.get('files', [])
-            total_files += len(doc_files)
-            
-            for j, file in enumerate(doc_files):
-                # Check ALL content fields
-                content = None
-                for field in ['fileContent', 'filecontent', 'content']:
-                    if field in file:
-                        content = file[field]
-                        break
-                
-                if not content:
-                    print(f"       NO CONTENT FOUND!")
+        print(f"\nDEBUG: Converting update request to create format")
+        print(f"workOrder type: {type(self.workOrder)}")
+        print(f"workItems type: {type(self.workItems)}, length: {len(self.workItems)}")
+        print(f"supportingDocuments type: {type(self.supportingDocuments)}, length: {len(self.supportingDocuments)}")
+        print(f"authorizations type: {type(self.authorizations)}")
+        print(f"tenderVendorData type: {type(self.tenderVendorData)}, length: {len(self.tenderVendorData)}")
         
-        
-        # Convert workOrder to formData JSON string
+        # Convert workOrder to formData dict
         form_data_dict = {
             "worNo": self.workOrder.get("documentNumber", ""),
             "date": self.workOrder.get("requestDate", ""),
@@ -418,152 +408,153 @@ class WorkOrdersUpdateRequest(BaseModel):
             "isWOR": self.workOrder.get("requestType") == "work_order_request",
         }
         
-        # Convert workItems to JSON string
+        print(f"\nDEBUG: Created form_data_dict with keys: {list(form_data_dict.keys())}")
+        
+        # Convert workItems
         work_items_list = []
-        for item in self.workItems:
+        for idx, item in enumerate(self.workItems):
             work_items_list.append({
                 "description": item.get("description", ""),
                 "quantity": float(item.get("quantity", 1)),
                 "unitPrice": float(item.get("unitPrice", 0))
             })
         
+        print(f"DEBUG: Created {len(work_items_list)} work items")
         
-        attachments_dict = {}
+        # Process supportingDocuments
+        supporting_docs_list = []
         
-        # Mapping from database document_type to frontend field names
-        field_mapping = {
-            "layout": "layout",
-            "documentation": "documentation", 
-            "photo_images": "photoImages",
-            "bill_of_quantity": "billOfQuantity"
-        }
-        
-        files_converted = 0
-        files_skipped = 0
-        
-        for doc in self.supportingDocuments:
-            original_doc_type = doc.get("documentType", "")
-            
-            # Map to frontend field name
-            field_name = None
-            for frontend_name, backend_name in field_mapping.items():
-                if backend_name == original_doc_type or frontend_name == original_doc_type:
-                    field_name = frontend_name
-                    break
-            
-            if not field_name:
-                field_name = original_doc_type  # fallback
-            
-            # Process files
+        for doc_idx, doc in enumerate(self.supportingDocuments):
+            document_type = doc.get("documentType", "")
             files = doc.get("files", [])
+            has_document = doc.get("hasDocument", False) or len(files) > 0
+            
             file_list = []
-            
-            
-            for i, file in enumerate(files):
-                
+            for file_idx, file in enumerate(files):
                 # Get filename
-                file_name = file.get('fileName') or file.get('filename') or f"file_{i+1}"
+                file_name = file.get('fileName') or file.get('filename') or f"file_{file_idx+1}"
                 
                 # Get action
                 action = file.get('action', 'new')
                 
                 # Get file content
                 file_content = None
-                for field in ['fileContent', 'filecontent', 'content']:
+                for field in ['fileContent', 'filecontent', 'content', 'data']:
                     if field in file:
                         file_content = file[field]
                         break
                 
-                if not file_content:
-                    print(f"       No content found in any field")
-                
-                # ALWAYS add to file_list, even if no content (we'll handle it later)
                 if action in ['existing', 'keep', 'unchanged']:
                     file_list.append({
-                        "filename": file_name,
-                        "filecontent": "",  # Empty for existing files
+                        "fileName": file_name,
+                        "fileContent": "",  # Empty for existing files
                         "action": "existing"
                     })
-                    files_converted += 1
                 elif action in ['new', 'add', 'upload']:
-                    if file_content:
+                    if file_content and len(str(file_content)) > 10:
                         file_list.append({
-                            "filename": file_name,
-                            "filecontent": file_content,
+                            "fileName": file_name,
+                            "fileContent": file_content,
                             "action": "new"
                         })
-                        files_converted += 1
                     else:
                         file_list.append({
-                            "filename": file_name,
-                            "filecontent": "",
+                            "fileName": file_name,
+                            "fileContent": "",
                             "action": "existing"  # Treat as existing since no content
                         })
-                        files_converted += 1
                 else:
                     file_list.append({
-                        "filename": file_name,
-                        "filecontent": file_content or "",
-                        "action": "new" if file_content else "existing"
+                        "fileName": file_name,
+                        "fileContent": file_content or "",
+                        "action": "new" if file_content and len(str(file_content)) > 10 else "existing"
                     })
-                    files_converted += 1
             
-            # Determine if uploaded
-            uploaded = doc.get('hasDocument', False) or len(file_list) > 0
-            
-            attachments_dict[field_name] = {
-                "uploaded": uploaded,
+            supporting_docs_list.append({
+                "documentType": document_type,
+                "hasDocument": has_document,
                 "files": file_list
-            }
-            
-        # Convert authorizations to JSON string
-        auth_dict = {}
-        for auth in self.authorizations:
-            role = auth.get("role", "")
-            name = auth.get("name", "")
-            date = auth.get("date", "")
-            
-            mapping = {
-                "prepared_by": ("preparedBy", "preparedDate"),
-                "department_head": ("deptHeadName", "deptHeadDate"),
-                "accounting_department": ("accDeptName", "accDeptDate"),
-                "business_manager": ("bmName", "bmDate"),
-                "director": ("directorName", "directorDate"),
-                "purchasing": ("purchasingName", "purchasingDate")
-            }
-            
-            if role in mapping:
-                name_field, date_field = mapping[role]
-                auth_dict[name_field] = name
-                auth_dict[date_field] = date
+            })
         
-        # Convert tenderVendorData to JSON string
-        tender_dict = {
-            "isTenderRequired": len(self.tenderVendorData) > 0,
-            "tenderDescription": "",
-            "tenderDate": "",
-            "tenderEvaluationCriteria": "",
-            "vendors": []
-        }
+        print(f"DEBUG: Created {len(supporting_docs_list)} supporting documents")
+        
+        # Process authorizations
+        authorizations_list = []
+        
+        # Check if authorizations is a list
+        if isinstance(self.authorizations, list):
+            for auth in self.authorizations:
+                if isinstance(auth, dict):
+                    authorizations_list.append({
+                        "role": auth.get("role", ""),
+                        "name": auth.get("name", ""),
+                        "date": auth.get("date", "")
+                    })
+        # Check if authorizations is a dict (from old format)
+        elif isinstance(self.authorizations, dict):
+            # Convert from dict format to list format
+            auth_mapping = {
+                "preparedBy": "prepared_by",
+                "deptHeadName": "department_head",
+                "accDeptName": "accounting_department",
+                "bmName": "business_manager",
+                "directorName": "director",
+                "purchasingName": "purchasing"
+            }
+            
+            date_mapping = {
+                "preparedBy": "preparedDate",
+                "deptHeadName": "deptHeadDate",
+                "accDeptName": "accDeptDate",
+                "bmName": "bmDate",
+                "directorName": "directorDate",
+                "purchasingName": "purchasingDate"
+            }
+            
+            for name_field, role in auth_mapping.items():
+                name = self.authorizations.get(name_field, "")
+                date_field = date_mapping.get(name_field, "")
+                date_val = self.authorizations.get(date_field, "")
+                
+                if name:
+                    authorizations_list.append({
+                        "role": role,
+                        "name": name,
+                        "date": date_val
+                    })
+        
+        print(f"DEBUG: Created {len(authorizations_list)} authorizations")
+        
+        # Process tenderVendorData
+        tender_vendor_list = []
         
         for vendor in self.tenderVendorData:
-            vendor_name = vendor.get("vendorName", "")
-            if vendor_name and vendor_name.strip():
-                tender_dict["vendors"].append({
-                    "id": vendor.get("id", 0),
-                    "vendorName": vendor_name.strip()
-                })
+            if isinstance(vendor, dict):
+                vendor_name = vendor.get("vendorName", "")
+                if vendor_name and vendor_name.strip():
+                    tender_vendor_list.append({
+                        "id": vendor.get("id", 0),
+                        "vendorName": vendor_name.strip()
+                    })
+        
+        print(f"DEBUG: Created {len(tender_vendor_list)} tender vendors")
         
         # Calculate total cost
-        total_cost = self.totalCost or sum(item.get("totalPrice", 0) for item in self.workItems)
+        total_cost = self.totalCost
+        if total_cost == 0:
+            total_cost = sum(item.get("totalPrice", 0) for item in self.workItems)
         
-        # Create WorkOrdersCreateRequest
-        return WorkOrdersCreateRequest(
-            name=f"Work Order {self.workOrder.get('documentNumber', '')}",
-            formData=json.dumps(form_data_dict),
-            workItems=json.dumps(work_items_list),
-            attachments=json.dumps(attachments_dict),
-            authorizations=json.dumps(auth_dict),
-            tenderVendorData=json.dumps(tender_dict),
+        print(f"DEBUG: Total cost: {total_cost}")
+        
+        # Create and return WorkOrdersCreateRequest
+        create_request = WorkOrdersCreateRequest(
+            workOrder=form_data_dict,
+            workItems=work_items_list,
+            supportingDocuments=supporting_docs_list,
+            authorizations=authorizations_list,
+            tenderVendorData=tender_vendor_list,
             totalCost=total_cost
         )
+        
+        print(f"DEBUG: Successfully created WorkOrdersCreateRequest")
+        return create_request
