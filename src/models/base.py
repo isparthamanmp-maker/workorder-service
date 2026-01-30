@@ -144,6 +144,8 @@ class WorkOrdersHistory(Base):
     __tablename__ = "work_orders_history"
 
     id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    UserGroup = Column(String(100), nullable=False)
+    authorization_type = Column(String(100), nullable=False)
     status = Column(String(100), nullable=False)
     refid = Column(Integer, nullable=False)
     refnum = Column(String(100), nullable=False)

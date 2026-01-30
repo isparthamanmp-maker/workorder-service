@@ -111,57 +111,28 @@ class TenderVendorDataSchema(BaseModel):
 
 
 # Main complex request schema
+# Main complex request schema
 class WorkOrdersCreateRequest(BaseModel):
-    name: str
-    formData: str
-    workItems: str
-    attachments: str
-    authorizations: str
-    tenderVendorData: str
-    totalCost: float
+    workOrder: dict  # This should contain form data
+    workItems: List[dict]
+    tenderVendorData: List[dict]  # Based on your payload, this is a list
+    supportingDocuments: List[dict]
+    authorizations: List[dict]
+    totalCost: Optional[float] = 0.0
 
-    @validator('formData')
-    def validate_form_data(cls, v):
-        try:
-            json.loads(v)
-            return v
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid formData JSON: {str(e)}")
-
-    @validator('workItems')
-    def validate_work_items(cls, v):
-        try:
-            parsed = json.loads(v)
-            if not isinstance(parsed, list):
-                raise ValueError("workItems must be a JSON array")
-            return v
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid workItems JSON: {str(e)}")
-
-    @validator('tenderVendorData')
-    def validate_tender_vendor_data(cls, v):
-        try:
-            parsed = json.loads(v)
-            TenderVendorDataSchema(**parsed)
-            return v
-        except (json.JSONDecodeError, ValueError) as e:
-            raise ValueError(f"Invalid tenderVendorData JSON: {str(e)}")
-
-    @validator('authorizations')
-    def validate_authorizations(cls, v):
-        try:
-            json.loads(v)
-            return v
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid authorizations JSON: {str(e)}")
-        
+    # Remove the validators since they're causing issues
+    # Pydantic will validate the types automatically
+    
     def extract_work_order_data(self) -> Dict[str, Any]:
         """Extract and map data to work_orders table columns"""
-        form_data = json.loads(self.formData)
-        tender_data = json.loads(self.tenderVendorData)
+        # Use workOrder directly (not formData)
+        form_data = self.workOrder  
+        
+        # tenderVendorData is a list, not a dict
+        tender_data = self.tenderVendorData[0] if self.tenderVendorData else {}  # Get first item or empty dict
         
         # Parse dates
-        request_date = self._parse_date(form_data.get('date'))
+        request_date = self._parse_date(form_data.get('requestDate'))
         start_date = self._parse_date(form_data.get('startDate'))
         end_date = self._parse_date(form_data.get('endDate'))
         
@@ -182,7 +153,7 @@ class WorkOrdersCreateRequest(BaseModel):
         
         # Map formData fields to database columns
         return {
-            'document_number': form_data.get('worNo', '').strip(),
+            'document_number': form_data.get('documentNumber', '').strip(),
             'request_date': request_date,
             'request_type': 'work_order_request' if form_data.get('isWOR', False) else 'item_request',
             'submitted_by': submitted_by,
@@ -195,7 +166,7 @@ class WorkOrdersCreateRequest(BaseModel):
             'budget_index': form_data.get('budgetIndex', '').strip(),
             'budget_name': form_data.get('budgetName', '').strip(),
             'cost_estimation': float(form_data.get('costEstimation', 0)) or float(self.totalCost),
-            'remaining_budget': float(form_data.get('budgetRemaining', 0)),
+            'remaining_budget': float(form_data.get('remainingBudget', 0)),
             'under_over': form_data.get('budgetUnderOver', '').strip(),
             'charge_to_tenant': 1 if form_data.get('chargeToTenant', False) else 0,
             'recommended_contractor': form_data.get('vendorName', '').strip(),
@@ -208,7 +179,8 @@ class WorkOrdersCreateRequest(BaseModel):
 
     def extract_work_items_data(self) -> List[Dict[str, Any]]:
         """Extract work items data for work_order_items table"""
-        work_items = json.loads(self.workItems)
+        # Use workItems directly (it's already a list)
+        work_items = self.workItems  
         items_data = []
         
         for idx, item in enumerate(work_items):
@@ -224,66 +196,49 @@ class WorkOrdersCreateRequest(BaseModel):
 
     def extract_attachments_data(self) -> List[Dict[str, Any]]:
         """Extract attachments data for attachments table"""
-        attachments = json.loads(self.attachments)
+        # Use supportingDocuments directly
+        attachments = self.supportingDocuments  
         attachments_data = []
         
-        # Define mapping between form field names and attachment types
-        attachment_type_mapping = {
-            'layout': 'layout',
-            'documentation': 'documentation',
-            'photoImages': 'photo_images',
-            'billOfQuantity': 'bill_of_quantity'
-        }
-        
-        for field_name, has_attachment in attachments.items():
+        for doc in attachments:
             attachments_data.append({
-                'document_type': attachment_type_mapping.get(field_name, field_name),
-                'has_document': has_attachment
+                'document_type': doc.get('documentType', ''),
+                'has_document': doc.get('hasDocument', False)
             })
         
         return attachments_data
 
     def extract_vendor_data(self) -> List[Dict[str, Any]]:
         """Extract vendor data for work_order_vendors table"""
-        tender_data = json.loads(self.tenderVendorData)
+        # Use tenderVendorData directly (it's already a list)
+        tender_data = self.tenderVendorData  
         vendors_data = []
         
-        for idx, vendor in enumerate(tender_data.get('vendors', [])):
-            # Only add vendors that have a name (not empty)
+        # If tenderVendorData is a list of dicts
+        for idx, vendor in enumerate(tender_data):
             vendor_name = vendor.get('vendorName', '').strip()
             if vendor_name:
                 vendors_data.append({
                     'vendor_name': vendor_name,
-                    
                 })
         
         return vendors_data
 
     def extract_authorizations_data(self) -> List[Dict[str, Any]]:
         """Extract authorizations data for authorizations table"""
-        authorizations = json.loads(self.authorizations)
+        # Use authorizations directly (it's already a list)
+        authorizations = self.authorizations  
         authorizations_data = []
         
-        # Mapping between form field names and authorization types
-        authorization_mapping = {
-            'preparedBy': ('prepared_by', 'preparedDate'),
-            'deptHeadName': ('dept_head', 'deptHeadDate'),
-            'accDeptName': ('verified_by_acc_dept', 'accDeptDate'),
-            'bmName': ('approved_by_bm', 'bmDate'),
-            'directorName': ('approved_by_director', 'directorDate'),
-            'purchasingName': ('received_by_purchasing', 'purchasingDate')
-        }
-        
-        for field_name, (auth_type, date_field) in authorization_mapping.items():
-            person_name = authorizations.get(field_name, '').strip()
-            date_str = authorizations.get(date_field, '').strip()
+        for auth in authorizations:
+            person_name = auth.get('name', '').strip()
+            date_str = auth.get('date', '').strip()
             
-            # Only create authorization record if there's a person name
             if person_name:
                 auth_date = self._parse_date(date_str) if date_str else None
                 
                 authorizations_data.append({
-                    'authorization_type': auth_type,
+                    'authorization_type': auth.get('role', ''),
                     'person_name': person_name,
                     'authorization_date': auth_date
                 })
@@ -315,7 +270,6 @@ class WorkOrdersCreateRequest(BaseModel):
         return None
 
     def _map_submitted_by(self, submitted_value: str) -> str:
-        
         return submitted_value
 
     def _map_vendor_selection_method(self, method: str) -> str:
@@ -422,38 +376,22 @@ class WorkOrdersUpdateRequest(BaseModel):
         """Convert update format to create request format"""
         import json
         
-        print("\n" + "=" * 80)
-        print("CONVERT TO CREATE REQUEST FORMAT - DEBUG")
-        print("=" * 80)
-        
-        # Debug: Show ALL files in original payload
-        print(f"\n1. ORIGINAL PAYLOAD - ALL FILES:")
         total_files = 0
         for i, doc in enumerate(self.supportingDocuments):
             doc_files = doc.get('files', [])
             total_files += len(doc_files)
-            print(f"\n   Document {i+1}: {doc.get('documentType')}")
-            print(f"   Files count: {len(doc_files)}")
             
             for j, file in enumerate(doc_files):
-                print(f"\n     File {j+1}:")
-                print(f"       fileName: {file.get('fileName')}")
-                print(f"       fileId: {file.get('fileId')}")
-                print(f"       action: {file.get('action')}")
-                print(f"       fileSize: {file.get('fileSize')}")
-                
                 # Check ALL content fields
                 content = None
                 for field in ['fileContent', 'filecontent', 'content']:
                     if field in file:
                         content = file[field]
-                        print(f"       Found in '{field}': length={len(str(content))}")
                         break
                 
                 if not content:
                     print(f"       NO CONTENT FOUND!")
         
-        print(f"\nTOTAL FILES IN ORIGINAL PAYLOAD: {total_files}")
         
         # Convert workOrder to formData JSON string
         form_data_dict = {
@@ -489,8 +427,6 @@ class WorkOrdersUpdateRequest(BaseModel):
                 "unitPrice": float(item.get("unitPrice", 0))
             })
         
-        # Convert attachments to JSON string - FIXED VERSION
-        print(f"\n2. PROCESSING EACH FILE FOR CONVERSION:")
         
         attachments_dict = {}
         
@@ -522,26 +458,20 @@ class WorkOrdersUpdateRequest(BaseModel):
             files = doc.get("files", [])
             file_list = []
             
-            print(f"\n   Processing document: {original_doc_type} -> {field_name}")
-            print(f"   Found {len(files)} file(s)")
             
             for i, file in enumerate(files):
-                print(f"\n     File {i+1}:")
                 
                 # Get filename
                 file_name = file.get('fileName') or file.get('filename') or f"file_{i+1}"
-                print(f"       Filename: {file_name}")
                 
                 # Get action
                 action = file.get('action', 'new')
-                print(f"       Action: {action}")
                 
                 # Get file content
                 file_content = None
                 for field in ['fileContent', 'filecontent', 'content']:
                     if field in file:
                         file_content = file[field]
-                        print(f"       Content from '{field}': length={len(str(file_content))}")
                         break
                 
                 if not file_content:
@@ -549,7 +479,6 @@ class WorkOrdersUpdateRequest(BaseModel):
                 
                 # ALWAYS add to file_list, even if no content (we'll handle it later)
                 if action in ['existing', 'keep', 'unchanged']:
-                    print(f"       → Will be added as existing file")
                     file_list.append({
                         "filename": file_name,
                         "filecontent": "",  # Empty for existing files
@@ -558,7 +487,6 @@ class WorkOrdersUpdateRequest(BaseModel):
                     files_converted += 1
                 elif action in ['new', 'add', 'upload']:
                     if file_content:
-                        print(f"       → Will be added as new file with content")
                         file_list.append({
                             "filename": file_name,
                             "filecontent": file_content,
@@ -566,8 +494,6 @@ class WorkOrdersUpdateRequest(BaseModel):
                         })
                         files_converted += 1
                     else:
-                        print(f"       ⚠ WARNING: Action is '{action}' but no content found")
-                        print(f"       → Will be added as empty file")
                         file_list.append({
                             "filename": file_name,
                             "filecontent": "",
@@ -575,7 +501,6 @@ class WorkOrdersUpdateRequest(BaseModel):
                         })
                         files_converted += 1
                 else:
-                    print(f"       → Unknown action '{action}', will be added anyway")
                     file_list.append({
                         "filename": file_name,
                         "filecontent": file_content or "",
@@ -591,15 +516,6 @@ class WorkOrdersUpdateRequest(BaseModel):
                 "files": file_list
             }
             
-            print(f"   Result: uploaded={uploaded}, files added={len(file_list)}")
-        
-        print(f"\n3. CONVERSION SUMMARY:")
-        print(f"   Total files processed: {files_converted}")
-        print(f"   Total files skipped: {files_skipped}")
-        
-        print(f"\n4. FINAL attachments_dict:")
-        print(json.dumps(attachments_dict, indent=2))
-        
         # Convert authorizations to JSON string
         auth_dict = {}
         for auth in self.authorizations:

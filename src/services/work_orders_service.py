@@ -158,7 +158,7 @@ class WorkOrdersService:
         return work_orders
     
     def create_work_order_from_request(self, request_data: WorkOrdersCreateRequest) -> Dict[str, Any]:
-        """Create work order from the complex request payload"""
+        """Create work order from the complex request payload - UPDATED to match PUT process"""
         try:
             # Extract work order data
             work_order_data = request_data.extract_work_order_data()
@@ -168,8 +168,15 @@ class WorkOrdersService:
             self.db.add(work_order)
             self.db.flush()  # Flush to get the ID without committing
             
-            # Store work order number
+            # Store work order number - IMPORTANT: This is now used for MinIO structure
             work_order_number = work_order.document_number
+            work_order_id = work_order.id
+            
+            print(f"\n{'='*80}")
+            print(f"CREATING WORK ORDER (POST)")
+            print(f"Work Order ID: {work_order_id}")
+            print(f"Work Order Number: {work_order_number}")
+            print(f"{'='*80}\n")
             
             # Make budget API call
             url = f'{os.getenv("BUDGET_SERVICE")}/api/v1/budget_final_realisasis/'
@@ -190,13 +197,13 @@ class WorkOrdersService:
             if response.status_code not in [200, 201]:
                 raise Exception(f"Budget API call failed with status {response.status_code}: {response.text}")
             
-            # Process attachments and files with work order number
-            self._process_attachments_and_files(request_data, work_order.id, work_order_number)
+            # Process supporting documents and files with work order number - USING SAME METHOD AS PUT
+            self._process_supporting_documents_put_style(request_data, work_order_id, work_order_number)
 
             # Extract and create work items
             work_items_data = request_data.extract_work_items_data()
             for item_data in work_items_data:
-                item_data['work_order_id'] = work_order.id
+                item_data['work_order_id'] = work_order_id
                 item_data['total_price'] = item_data['quantity'] * item_data['unit_price']
                 work_item = WorkOrderItems(**item_data)
                 self.db.add(work_item)
@@ -204,14 +211,14 @@ class WorkOrdersService:
             # Extract and create vendor data
             vendors_data = request_data.extract_vendor_data()
             for vendor_data in vendors_data:
-                vendor_data['work_order_id'] = work_order.id
+                vendor_data['work_order_id'] = work_order_id
                 work_vendor = WorkOrderVendors(**vendor_data)
                 self.db.add(work_vendor)
             
             # Extract and create authorizations data
             authorizations_data = request_data.extract_authorizations_data()
             for auth_data in authorizations_data:
-                auth_data['work_order_id'] = work_order.id
+                auth_data['work_order_id'] = work_order_id
                 authorization = Authorizations(**auth_data)
                 self.db.add(authorization)
 
@@ -226,6 +233,12 @@ class WorkOrdersService:
                 "total_cost": request_data.totalCost
             }
             
+            print(f"\n{'='*80}")
+            print(f"WORK ORDER CREATED SUCCESSFULLY")
+            print(f"Work Order: {work_order_number}")
+            print(f"Total Items: {len(work_items_data)}")
+            print(f"{'='*80}")
+            
             return response
             
         except requests.exceptions.RequestException as e:
@@ -237,255 +250,125 @@ class WorkOrdersService:
             # Rollback database transaction on any other error
             self.db.rollback()
             print(f"Error creating work order: {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise Exception(f"Failed to create work order: {str(e)}")
     
-    def _process_attachments_and_files(self, request_data: WorkOrdersCreateRequest, work_order_id: int, work_order_number: str):
-        """Process attachments and upload files to MinIO - DEBUG VERSION"""
+    def _process_supporting_documents_put_style(self, request_data: WorkOrdersCreateRequest, work_order_id: int, work_order_number: str):
+        """Process supporting documents and upload files to MinIO - UPDATED to match PUT style"""
         try:
-            print("=" * 80)
-            print("DEBUG: Starting file processing")
+            print("\n" + "=" * 80)
+            print("DEBUG: Processing supporting documents in PUT style (same as update)")
             print(f"Work Order ID: {work_order_id}")
             print(f"Work Order Number: {work_order_number}")
             
-            # Parse attachments
-            attachments = json.loads(request_data.attachments)
-            print(f"\nDEBUG: Parsed attachments JSON keys: {list(attachments.keys())}")
+            # Use supportingDocuments from the schema
+            supporting_docs = request_data.supportingDocuments
+            print(f"\nDEBUG: Number of supporting documents: {len(supporting_docs)}")
             
-            # Print full structure for debugging
-            print(f"\nDEBUG: Full attachments structure:")
-            print(json.dumps(attachments, indent=2))
-            print("=" * 80)
+            # Print structure for debugging
+            print(f"\nDEBUG: Supporting documents structure:")
+            print(json.dumps(supporting_docs, indent=2))
             
             total_files_processed = 0
             
-            # Process each attachment type
-            for field_name, section_data in attachments.items():
+            # Process each supporting document
+            for doc_idx, doc in enumerate(supporting_docs):
                 print(f"\n{'='*40}")
-                print(f"Processing field: {field_name}")
-                print(f"Section data type: {type(section_data)}")
+                print(f"Processing document {doc_idx + 1}:")
                 
-                if isinstance(section_data, dict):
-                    print(f"Section data keys: {list(section_data.keys())}")
+                document_type = doc.get('documentType', '')
+                has_document = doc.get('hasDocument', False)
+                files = doc.get('files', [])
+                
+                print(f"Document Type: {document_type}")
+                print(f"Has Document: {has_document}")
+                print(f"Number of files: {len(files)}")
+                
+                if not has_document or len(files) == 0:
+                    print(f"Skipping - no document or no files")
+                    # Still create supporting document record
+                    supporting_doc = SupportingDocuments(
+                        work_order_id=work_order_id,
+                        document_type=document_type,
+                        has_document=False
+                    )
+                    self.db.add(supporting_doc)
+                    continue
+                
+                # Create supporting document
+                supporting_doc = SupportingDocuments(
+                    work_order_id=work_order_id,
+                    document_type=document_type,
+                    has_document=True
+                )
+                self.db.add(supporting_doc)
+                self.db.flush()
+                print(f"Created supporting document: ID={supporting_doc.id}, Type={document_type}")
+                
+                # Process files
+                for file_idx, file_item in enumerate(files):
+                    print(f"\n  Processing file {file_idx + 1}:")
                     
-                    # Check if uploaded
-                    if section_data.get('uploaded', False):
-                        print(f"✓ {field_name} is marked as uploaded")
+                    if isinstance(file_item, dict):
+                        # Look for filename and filecontent in various possible keys
+                        file_name = None
+                        file_content = None
                         
-                        # Check for files
-                        if 'files' in section_data:
-                            files = section_data['files']
-                            print(f"Files type: {type(files)}")
-                            
-                            if isinstance(files, list):
-                                print(f"Number of files: {len(files)}")
+                        # Find filename
+                        for key in ['fileName', 'filename', 'name']:
+                            if key in file_item and file_item[key]:
+                                file_name = file_item[key]
+                                break
+                        
+                        # Find file content
+                        for key in ['fileContent', 'filecontent', 'content', 'data']:
+                            if key in file_item and file_item[key]:
+                                file_content = file_item[key]
+                                break
+                        
+                        # For POST, we expect new files with content
+                        if file_name and file_content and len(file_content) > 10:
+                            try:
+                                # Upload to MinIO using work order number structure
+                                file_url, file_size = self._upload_to_minio(
+                                    work_order_number, 
+                                    file_name, 
+                                    file_content
+                                )
                                 
-                                # Create supporting document
-                                document_type = field_name  # Use field name as document type
-                                supporting_doc = SupportingDocuments(
+                                # Create WorkOrderFiles record
+                                work_order_file = WorkOrderFiles(
                                     work_order_id=work_order_id,
-                                    document_type=document_type,
-                                    has_document=True
+                                    supporting_document_id=supporting_doc.id,
+                                    file_name=file_name,
+                                    file_url=file_url,
+                                    file_size=file_size
                                 )
-                                self.db.add(supporting_doc)
-                                self.db.flush()
-                                
-                                # Debug: Print all file items
-                                for i, item in enumerate(files):
-                                    print(f"\nFile item {i}:")
-                                    print(f"  Type: {type(item)}")
-                                    if isinstance(item, dict):
-                                        print(f"  Keys: {list(item.keys())}")
-                                        for key, value in item.items():
-                                            if key == 'filecontent':
-                                                print(f"  {key}: {str(value)[:100]}...")
-                                            else:
-                                                print(f"  {key}: {value}")
-                                    else:
-                                        print(f"  Value: {item}")
-                                
-                                # Try to process files based on structure
-                                processed_in_this_section = self._process_files_list(
-                                    files, work_order_id, work_order_number, supporting_doc.id
-                                )
-                                total_files_processed += processed_in_this_section
-                                print(f"✓ Processed {processed_in_this_section} files in {field_name}")
-                            else:
-                                print(f"✗ Files is not a list: {type(files)}")
+                                self.db.add(work_order_file)
+                                total_files_processed += 1
+                                print(f"    ✓ Uploaded: {file_name}")
+                            except Exception as e:
+                                print(f"    ✗ Failed to upload {file_name}: {e}")
                         else:
-                            print(f"✗ No files key in section data")
-                            
-                            # Still create supporting document if uploaded
-                            document_type = field_name
-                            supporting_doc = SupportingDocuments(
-                                work_order_id=work_order_id,
-                                document_type=document_type,
-                                has_document=False
-                            )
-                            self.db.add(supporting_doc)
+                            print(f"    Skipping - missing filename or content")
+                            print(f"    File name: {file_name}")
+                            print(f"    Content available: {'Yes' if file_content and len(file_content) > 10 else 'No'}")
                     else:
-                        print(f"✗ {field_name} is not uploaded")
-                else:
-                    print(f"✗ Section data is not a dict")
+                        print(f"    Skipping - not a dictionary: {type(file_item)}")
             
             print(f"\n{'='*80}")
-            print(f"DEBUG: Total files processed across all sections: {total_files_processed}")
+            print(f"Supporting documents processing complete")
+            print(f"Total files uploaded: {total_files_processed}")
             print("=" * 80)
             
         except Exception as e:
-            print(f"\n✗ ERROR in _process_attachments_and_files: {e}")
+            print(f"\n✗ ERROR in supporting documents processing: {e}")
             import traceback
             traceback.print_exc()
             raise
-
-    def _process_files_list(self, files: list, work_order_id: int, work_order_number: str, supporting_doc_id: int) -> int:
-        """Process a list of files - try different structures"""
-        processed_count = 0
-        
-        # Strategy 1: Each item has both filename and filecontent
-        for i, item in enumerate(files):
-            if isinstance(item, dict) and 'filename' in item and 'filecontent' in item:
-                file_name = item['filename']
-                file_content = item['filecontent']
-                
-                if file_name and file_content:
-                    try:
-                        file_url, file_size = self._upload_to_minio(work_order_number, file_name, file_content)
-                        
-                        work_order_file = WorkOrderFiles(
-                            work_order_id=work_order_id,
-                            supporting_document_id=supporting_doc_id,
-                            file_name=file_name,
-                            file_url=file_url,
-                            file_size=file_size
-                        )
-                        self.db.add(work_order_file)
-                        processed_count += 1
-                        print(f"  ✓ Uploaded via Strategy 1: {file_name}")
-                    except Exception as e:
-                        print(f"  ✗ Failed to upload {file_name}: {e}")
-        
-        # If Strategy 1 didn't work, try Strategy 2: Paired items
-        if processed_count == 0:
-            print("  Trying Strategy 2: Paired items (filename, filecontent)...")
-            for i in range(0, len(files) - 1, 2):
-                if i + 1 < len(files):
-                    file_item = files[i]
-                    content_item = files[i + 1]
-                    
-                    file_name = None
-                    file_content = None
-                    
-                    # Extract filename from first item
-                    if isinstance(file_item, dict) and 'filename' in file_item:
-                        file_name = file_item['filename']
-                    elif isinstance(file_item, str):
-                        file_name = file_item
-                    
-                    # Extract filecontent from second item
-                    if isinstance(content_item, dict) and 'filecontent' in content_item:
-                        file_content = content_item['filecontent']
-                    elif isinstance(content_item, str):
-                        file_content = content_item
-                    
-                    if file_name and file_content:
-                        try:
-                            file_url, file_size = self._upload_to_minio(work_order_number, file_name, file_content)
-                            
-                            work_order_file = WorkOrderFiles(
-                                work_order_id=work_order_id,
-                                supporting_document_id=supporting_doc_id,
-                                file_name=file_name,
-                                file_url=file_url,
-                                file_size=file_size
-                            )
-                            self.db.add(work_order_file)
-                            processed_count += 1
-                            print(f"  ✓ Uploaded via Strategy 2: {file_name}")
-                        except Exception as e:
-                            print(f"  ✗ Failed to upload {file_name}: {e}")
-        
-        return processed_count
     
-
-    def _delete_files_from_minio(self, work_order_number: str, files: List[WorkOrderFiles] = None):
-        """
-        Delete files from MinIO storage using the structure: bucketname/workordernumber/filename
-        
-        Args:
-            work_order_number: The work order number (document_number)
-            files: Optional list of WorkOrderFiles objects (if None, will find all files for this work order)
-        """
-        try:
-            if not work_order_number:
-                print("⚠ No work order number provided for MinIO deletion")
-                return
-            
-            # If files list is not provided, query from database
-            if files is None:
-                files = self.db.query(WorkOrderFiles).filter(
-                    WorkOrderFiles.work_order_id == self._get_work_order_id_by_number(work_order_number)
-                ).all()
-            
-            deleted_count = 0
-            error_count = 0
-            
-            # Delete individual files
-            for file in files:
-                try:
-                    # Construct object name: workordernumber/filename
-                    object_name = f"{work_order_number}/{file.file_name}"
-                    
-                    # Check if object exists
-                    try:
-                        self.minio_client.stat_object(self.bucket_name, object_name)
-                        
-                        # Delete the file
-                        self.minio_client.remove_object(
-                            bucket_name=self.bucket_name,
-                            object_name=object_name
-                        )
-                        print(f"✓ Deleted from MinIO: {object_name}")
-                        deleted_count += 1
-                        
-                    except S3Error as e:
-                        if e.code == 'NoSuchKey':
-                            print(f"⚠ File not found in MinIO: {object_name}")
-                        else:
-                            print(f"⚠ Error checking file in MinIO: {object_name} - {e}")
-                            error_count += 1
-                            
-                except Exception as e:
-                    print(f"✗ Error processing file deletion for {file.file_name}: {e}")
-                    error_count += 1
-            
-            # Also try to delete the entire directory if it exists
-            try:
-                # List all objects with this prefix
-                objects = self.minio_client.list_objects(
-                    self.bucket_name,
-                    prefix=f"{work_order_number}/",
-                    recursive=True
-                )
-                
-                dir_objects = list(objects)
-                if dir_objects:
-                    print(f"Found {len(dir_objects)} objects in directory {work_order_number}/")
-                    
-            except Exception as e:
-                print(f"Note: Could not list directory {work_order_number}/: {e}")
-            
-            print(f"MinIO cleanup complete: {deleted_count} deleted, {error_count} errors")
-            
-        except Exception as e:
-            print(f"✗ Error in MinIO deletion process: {e}")
-
-    def _get_work_order_id_by_number(self, work_order_number: str) -> Optional[int]:
-        """Helper method to get work order ID by document number"""
-        work_order = self.db.query(WorkOrders).filter(
-            WorkOrders.document_number == work_order_number
-        ).first()
-        return work_order.id if work_order else None
-                
+    # UPDATE: Fix the update_work_order_from_request method to use supportingDocuments
     def update_work_order_from_request(self, work_orders_id: int, request_data: WorkOrdersCreateRequest) -> Dict[str, Any]:
         """Update existing work order from the complex request payload"""
         
@@ -509,6 +392,16 @@ class WorkOrdersService:
             
             # Update the updated_at timestamp
             existing_work_order.updated_at = datetime.utcnow()
+            
+            # Get updated work order number (in case it changed)
+            updated_work_order_number = existing_work_order.document_number
+            
+            print(f"\n{'='*80}")
+            print(f"UPDATING WORK ORDER (PUT)")
+            print(f"Work Order ID: {work_orders_id}")
+            print(f"Old Number: {current_work_order_number}")
+            print(f"New Number: {updated_work_order_number}")
+            print(f"{'='*80}\n")
             
             # --- DELETE EXISTING FILES FROM MINIO ---
             # Delete files using work order number
@@ -549,8 +442,8 @@ class WorkOrdersService:
             self.db.flush()
             
             # --- PROCESS NEW FILES ---
-            # Need to update the _upload_to_minio method to use workordernumber/filename structure
-            self._process_attachments_and_files(request_data, work_orders_id, existing_work_order.document_number)
+            # Use same method as POST
+            self._process_supporting_documents_put_style(request_data, work_orders_id, updated_work_order_number)
             
             # Extract and create work items
             work_items_data = request_data.extract_work_items_data()
@@ -585,12 +478,21 @@ class WorkOrdersService:
                 "total_cost": request_data.totalCost
             }
             
+            print(f"\n{'='*80}")
+            print(f"WORK ORDER UPDATED SUCCESSFULLY")
+            print(f"Work Order: {updated_work_order_number}")
+            print(f"Total Items: {len(work_items_data)}")
+            print(f"{'='*80}")
+            
             return response
         
         except Exception as e:
             self.db.rollback()
             print(f"Error updating work order: {str(e)}")
             raise Exception(f"Failed to update work order: {str(e)}")
+
+    # The rest of your methods remain the same...
+    # ... (keep all other methods unchanged)
     
     def get_work_orders(self, work_orders_id: int) -> Optional[WorkOrders]:
         """Get work order with same structure as POST payload, plus id at root"""

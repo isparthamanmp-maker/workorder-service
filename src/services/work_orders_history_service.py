@@ -1,7 +1,7 @@
 # src/services/work_orders_history_service.py
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from src.models.base import WorkOrdersHistory, WorkOrders
+from src.models.base import WorkOrdersHistory, WorkOrders, Authorizations
 from src.schemas.work_orders_history_schema import WorkOrdersHistoryCreate, WorkOrdersHistoryUpdate
 
 import datetime
@@ -37,12 +37,68 @@ class WorkOrdersHistoryService:
                     # Optionally, update the updated_at timestamp
                     work_order.updated_at = datetime.datetime.now()
 
-                    if work_orders_history.status=='Cancel':
+                    # 'prepared_by': ('preparedBy', 'preparedDate'),
+                    # 'dept_head': ('deptHeadName', 'deptHeadDate'),
+                    # 'verified_by_acc_dept': ('accDeptName', 'accDeptDate'),
+                    # 'approved_by_bm': ('bmName', 'bmDate'),
+                    # 'approved_by_director': ('directorName', 'directorDate'),
+                    # 'received_by_purchasing': ('purchasingName', 'purchasingDate')
+
+                    if work_orders_history.status == 'Approved':
+                        # Create authorization record
+
+                        if work_orders_history.UserGroup==work_order.submitted_by:
+                            # Create authorization record
+                            authorization = Authorizations(
+                                work_order_id=work_order.id,
+                                authorization_type='dept_head',  # Fixed value as requested
+                                person_name=work_orders_history.created_by or None,  # Assuming user field exists in history
+                                authorization_date=datetime.datetime.now().date()  # Today's date
+                            )
+                            self.db.add(authorization)
+
+                        if work_orders_history.UserGroup=="ACC":
+                            authorization = Authorizations(
+                                work_order_id=work_order.id,
+                                authorization_type="verified_by_acc_dept",  # Fixed value as requested
+                                person_name=work_orders_history.created_by or None,  # Assuming user field exists in history
+                                authorization_date=datetime.datetime.now().date()  # Today's date
+                            )
+                            self.db.add(authorization)
+                        
+                        if work_orders_history.UserGroup=="BM":
+                            authorization = Authorizations(
+                                work_order_id=work_order.id,
+                                authorization_type="approved_by_bm",  # Fixed value as requested
+                                person_name=work_orders_history.created_by or None,  # Assuming user field exists in history
+                                authorization_date=datetime.datetime.now().date()  # Today's date
+                            )
+                            self.db.add(authorization)
+
+                        if work_orders_history.UserGroup=="DIR":
+                            authorization = Authorizations(
+                                work_order_id=work_order.id,
+                                authorization_type="approved_by_director",  # Fixed value as requested
+                                person_name=work_orders_history.created_by or None,  # Assuming user field exists in history
+                                authorization_date=datetime.datetime.now().date()  # Today's date
+                            )
+                            self.db.add(authorization)
+
+                        if work_orders_history.UserGroup=="PUR":
+                            authorization = Authorizations(
+                                work_order_id=work_order.id,
+                                authorization_type="received_by_purchasing",  # Fixed value as requested
+                                person_name=work_orders_history.created_by or None,  # Assuming user field exists in history
+                                authorization_date=datetime.datetime.now().date()  # Today's date
+                            )
+                            self.db.add(authorization)
+
+                    if work_orders_history.status=='Cancel' or work_orders_history.status=='Rejected':
                         # Make budget API call
                         
 
                         url = f'{os.getenv("BUDGET_SERVICE")}/api/v1/budget_final_realisasis/'
-                        print(url)
+                        
                         payload = json.dumps({
                             "budget_index": work_order.budget_index,
                             "refid": work_order.id,

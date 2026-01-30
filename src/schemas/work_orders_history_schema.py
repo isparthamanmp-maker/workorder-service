@@ -6,6 +6,8 @@ from datetime import datetime
 # Schema for API responses
 class WorkOrdersHistoryResponse(BaseModel):
     id: int
+    UserGroup: str
+    authorization_type: str
     status: str
     refid: int
     refnum: str
@@ -21,6 +23,8 @@ class WorkOrdersHistoryResponse(BaseModel):
     )
     
 class WorkOrdersHistoryCreate(BaseModel):
+    UserGroup: str = Field(..., max_length=100)
+    authorization_type: str = Field(..., max_length=100)
     status: str = Field(..., max_length=100)
     refid: int = Field(...)
     refnum: str = Field(..., max_length=100)
@@ -32,6 +36,8 @@ class WorkOrdersHistoryCreate(BaseModel):
 
 # Schema for updating records
 class WorkOrdersHistoryUpdate(BaseModel):
+    UserGroup: str = Field(..., max_length=100)
+    authorization_type: str = Field(..., max_length=100)
     status: Optional[str] = Field(None, max_length=100)
     refid: Optional[int] = None
     refnum: Optional[str] = Field(None, max_length=100)
@@ -46,6 +52,8 @@ class WorkOrdersHistoryResponseAlt(BaseModel):
     """Alternative response with database field names"""
     
     id: int
+    UserGroup: str = None
+    authorization_type: str = None
     status: str = None
     refid: int = None
     refnum: str = None
