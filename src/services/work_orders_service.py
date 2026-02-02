@@ -681,7 +681,7 @@ class WorkOrdersService:
         
         # Get existing work order
         existing_work_order = self.db.query(WorkOrders).filter(WorkOrders.id == work_orders_id).first()
-        print(existing_work_order)
+        
         if not existing_work_order:
             raise HTTPException(status_code=404, detail="Work order not found")
         
@@ -698,7 +698,16 @@ class WorkOrdersService:
                 if hasattr(existing_work_order, key):
                     setattr(existing_work_order, key, value)
 
+            print("request_data:",request_data)
+
+            existing_work_order.remaining_budget = request_data.workOrder['budgetRemaining']
+            existing_work_order.under_over = request_data.workOrder['under_over']
+            existing_work_order.recommended_contractor = request_data.workOrder['recommended_contractor']
+            existing_work_order.reason = request_data.workOrder['reason']
+            
             existing_work_order.document_number=work_order_number
+
+            print("existing_work_order:",existing_work_order)
             
             print(f"Existing doc number After loop: {existing_work_order.document_number}")
 

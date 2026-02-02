@@ -400,10 +400,10 @@ class WorkOrdersUpdateRequest(BaseModel):
             "budgetName": self.workOrder.get("budgetName", ""),
             "costEstimation": float(self.workOrder.get("costEstimation", 0)),
             "budgetRemaining": float(self.workOrder.get("remainingBudget", 0)),
-            "budgetUnderOver": self.workOrder.get("underOver", ""),
+            "under_over": self.workOrder.get("underOver", ""),
             "chargeToTenant": bool(self.workOrder.get("chargeToTenant", False)),
-            "vendorName": self.workOrder.get("recommendedContractor", ""),
-            "vendorReason": self.workOrder.get("reason", ""),
+            "recommended_contractor": self.workOrder.get("recommendedContractor", ""),
+            "reason": self.workOrder.get("reason", ""),
             "vendorSelectionMethod": self.workOrder.get("vendorSelectionMethod", "tender_process"),
             "isWOR": self.workOrder.get("requestType") == "work_order_request",
         }

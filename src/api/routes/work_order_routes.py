@@ -146,6 +146,7 @@ def update_complex_work_order(
         print("Converting to create request format...")
         create_request = request_data.convert_to_create_request_format()
         
+        print ("create_request:",create_request)
         # Convert supportingDocuments to dict BEFORE passing
         original_supporting_docs = request_data.dict()['supportingDocuments']
         
