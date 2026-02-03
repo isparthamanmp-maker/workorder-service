@@ -13,6 +13,8 @@ import binascii
 from minio import Minio
 from minio.error import S3Error
 import base64 
+from datetime import datetime
+from sqlalchemy import extract
 
 class WorkOrdersService:
     """work_orders service layer using Pydantic schemas"""
@@ -621,53 +623,54 @@ class WorkOrdersService:
         """Count total work_orders records"""
         return self.db.query(WorkOrders).count()
     
+
     def generate_next_document_number(self, submitted_by: str) -> str:
         """
-        Generate the next document number in format: {number}/WOR/{submitted_by}:NMP/N/{currentyear}
-        
-        Based on existing data:
-        - Format: {number}/WOR/{submitted_by}:NMP/N/{YYYY}
-        - Example: 0009/WOR/IT_Dept:NMP/N/2025
-        
-        Rules:
-        1. Get the highest number for the current year and submitted_by
-        2. Increment by 1
-        3. Pad with leading zeros to 4 digits
+        Generate the next document number in format:
+        {number}/WOR/{submitted_by}/NMP/{ROMAN_MONTH}/{YYYY}
+
+        Example:
+        0009/WOR/IT_Dept/NMP/II/2025
         """
-        from sqlalchemy import extract
-        
-        current_year = datetime.now().year
-        
-        # Query for the highest document number for this submitted_by in current year
+
+        # Roman numeral map for months
+        MONTH_TO_ROMAN = {
+            1: "I", 2: "II", 3: "III", 4: "IV",
+            5: "V", 6: "VI", 7: "VII", 8: "VIII",
+            9: "IX", 10: "X", 11: "XI", 12: "XII"
+        }
+
+        now = datetime.now()
+        current_year = now.year
+        roman_month = MONTH_TO_ROMAN[now.month]
+
+        # Query highest document number for this submitted_by & year
         query = self.db.query(WorkOrders.document_number).filter(
             WorkOrders.submitted_by == submitted_by,
             extract('year', WorkOrders.request_date) == current_year
         ).all()
-        
+
         max_number = 0
-        
+
         for doc_num_row in query:
             doc_num = doc_num_row[0]
             if doc_num:
-                # Extract the number part (before the first slash)
-                # Expected format: 0009/WOR/IT_Dept:NMP/N/2025
+                # Expected format: 0009/WOR/IT_Dept/NMP/II/2025
                 parts = doc_num.split('/')
-                if len(parts) > 0 and parts[0].isdigit():
+                if parts and parts[0].isdigit():
                     number_part = int(parts[0])
-                    if number_part > max_number:
-                        max_number = number_part
-        
-        # If no existing documents found for this submitted_by in current year, start from 1
+                    max_number = max(max_number, number_part)
+
         next_number = max_number + 1
-        
-        # Format with leading zeros (4 digits)
         number_str = f"{next_number:04d}"
-        
-        # Construct the new document number
-        # Format: {number}/WOR/{submitted_by}:NMP/N/{currentyear}
-        new_document_number = f"{number_str}/WOR/{submitted_by}:NMP/N/{current_year}"
-        
+
+        # Final document number
+        new_document_number = (
+            f"{number_str}/WOR/{submitted_by}/NMP/{roman_month}/{current_year}"
+        )
+
         return new_document_number
+
 
     def update_work_order_with_existing_files(self, work_orders_id: int, request_data: WorkOrdersCreateRequest, original_supporting_docs: List[dict]) -> Dict[str, Any]:
         """Update work order but preserve existing files marked as 'existing'"""
