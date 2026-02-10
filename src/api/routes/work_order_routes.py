@@ -33,6 +33,7 @@ def create_complex_work_order(
             "work_order_id": result["work_order"].id,
             "document_number": result["work_order"].document_number,
             "work_items_count": result["work_items_count"],
+            "budget_entries_count": result.get("budget_entries_count", 0),  # Add this line
             "total_cost": result["total_cost"]
         }
     except Exception as e:
@@ -166,6 +167,7 @@ def update_complex_work_order(
             "work_order_id": result["work_order"].id,
             "document_number": result["work_order"].document_number,
             "work_items_count": result["work_items_count"],
+            "budget_entries_count": result.get("budget_entries_count", 0),  # Add this line
             "total_cost": result["total_cost"]
         }
     except Exception as e:

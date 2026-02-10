@@ -118,6 +118,7 @@ class WorkOrdersCreateRequest(BaseModel):
     tenderVendorData: List[dict]  # Based on your payload, this is a list
     supportingDocuments: List[dict]
     authorizations: List[dict]
+    budgetEntries: List[dict] = Field(default_factory=list)  # Add this line
     totalCost: Optional[float] = 0.0
 
     # Remove the validators since they're causing issues
@@ -167,7 +168,7 @@ class WorkOrdersCreateRequest(BaseModel):
             'budget_name': form_data.get('budgetName', '').strip(),
             'cost_estimation': float(form_data.get('costEstimation', 0)) or float(self.totalCost),
             'remaining_budget': float(form_data.get('remainingBudget', 0)),
-        'under_over': form_data.get('underOver', '').strip(),
+        'under_over': float(form_data.get('underOver', 0)),
             'charge_to_tenant': 1 if form_data.get('chargeToTenant', False) else 0,
         'recommended_contractor': form_data.get('recommendedContractor', '').strip(),
         'reason': form_data.get('reason', '').strip(),
@@ -308,6 +309,7 @@ class WorkOrdersGetResponse(BaseModel):
     attachments: str
     authorizations: str
     tenderVendorData: str
+    budgetEntries: str
     totalCost: float
     
     model_config = ConfigDict(
@@ -327,7 +329,7 @@ class WorkOrdersFullResponse(BaseModel):
     totalCost: float
     attachments: List[dict] = Field(default_factory=list)  # Optional with default
     authorizations: List[dict] = Field(default_factory=list)  # Optional with default
-    
+    budgetEntries: List[dict] = Field(default_factory=list)  # Add this line
     class Config:
         from_attributes = True
 
@@ -362,6 +364,7 @@ class WorkOrdersUpdateRequest(BaseModel):
     tenderVendorData: List[dict]
     supportingDocuments: List[dict]
     authorizations: List[dict]
+    budgetEntries: List[dict] = Field(default_factory=list)  # Add this line
     totalCost: Optional[float] = 0.0
 
     model_config = ConfigDict(
@@ -539,6 +542,24 @@ class WorkOrdersUpdateRequest(BaseModel):
         
         print(f"DEBUG: Created {len(tender_vendor_list)} tender vendors")
         
+        # Process budgetEntries if they exist
+        budget_entries_list = []
+        if hasattr(self, 'budgetEntries'):
+            for budget_entry in self.budgetEntries:
+                if isinstance(budget_entry, dict):
+                    budget_entries_list.append({
+                        "id": budget_entry.get("id", 0),
+                        "budgetIndex": budget_entry.get("budgetIndex", ""),
+                        "budgetName": budget_entry.get("budgetName", ""),
+                        "costEstimation": float(budget_entry.get("costEstimation", 0)),
+                        "budgetRemaining": float(budget_entry.get("budgetRemaining", 0)),
+                        "underOver": budget_entry.get("underOver", ""),
+                        "entryOrder": budget_entry.get("entryOrder", 0),
+                        "isSelected": bool(budget_entry.get("isSelected", False))
+                    })
+        
+        print(f"DEBUG: Created {len(budget_entries_list)} budget entries")
+
         # Calculate total cost
         total_cost = self.totalCost
         if total_cost == 0:
@@ -553,6 +574,7 @@ class WorkOrdersUpdateRequest(BaseModel):
             supportingDocuments=supporting_docs_list,
             authorizations=authorizations_list,
             tenderVendorData=tender_vendor_list,
+            budgetEntries=budget_entries_list,  # Add this line
             totalCost=total_cost
         )
         

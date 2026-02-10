@@ -1,6 +1,6 @@
 from typing import List, Optional, Dict, Any, Tuple  # Add Tuple here
 from sqlalchemy.orm import Session
-from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors, SupportingDocuments, Authorizations, WorkOrderFiles
+from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors, SupportingDocuments, Authorizations, WorkOrderFiles, WorkOrderBudgets
 from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersCreateRequest
 from fastapi import HTTPException
 from sqlalchemy.orm import joinedload
@@ -170,7 +170,7 @@ class WorkOrdersService:
             self.db.add(work_order)
             self.db.flush()  # Flush to get the ID without committing
             
-            # Store work order number - IMPORTANT: This is now used for MinIO structure
+            # Store work order number
             work_order_number = work_order.document_number
             work_order_id = work_order.id
             
@@ -180,28 +180,30 @@ class WorkOrdersService:
             print(f"Work Order Number: {work_order_number}")
             print(f"{'='*80}\n")
             
-            # Make budget API call
-            url = f'{os.getenv("BUDGET_SERVICE")}/api/v1/budget_final_realisasis/'
-            payload = json.dumps({
-                "budget_index": work_order.budget_index,
-                "refid": work_order.id,
-                "refnum": work_order.document_number,
-                "refvalue": work_order.cost_estimation,
-                "created_by": "Ketut Sakho Parthama"
-            })
-            headers = {
-                'Content-Type': 'application/json'
-            }
+            # Make budget API call for EACH budget entry
+            for budget_entry in request_data.budgetEntries:
+                if budget_entry.get('isSelected', False):
+                    url = f'{os.getenv("BUDGET_SERVICE")}/api/v1/budget_final_realisasis/'
+                    payload = json.dumps({
+                        "budget_index": budget_entry.get('budgetIndex', work_order.budget_index),
+                        "refid": work_order.id,
+                        "refnum": work_order.document_number,
+                        "refvalue": float(budget_entry.get('costEstimation', 0)),
+                        "created_by": "Ketut Sakho Parthama"
+                    })
+                    headers = {
+                        'Content-Type': 'application/json'
+                    }
+                    
+                    response = requests.request("POST", url, headers=headers, data=payload)
+                    
+                    # Check if API call was successful
+                    if response.status_code not in [200, 201]:
+                        print(f"Warning: Budget API call failed for {budget_entry.get('budgetIndex')}: {response.text}")
             
-            response = requests.request("POST", url, headers=headers, data=payload)
-            
-            # Check if API call was successful
-            if response.status_code not in [200, 201]:
-                raise Exception(f"Budget API call failed with status {response.status_code}: {response.text}")
-            
-            # Process supporting documents and files with work order number - USING SAME METHOD AS PUT
+            # Process supporting documents and files
             self._process_supporting_documents_put_style(request_data, work_order_id, work_order_number)
-
+            
             # Extract and create work items
             work_items_data = request_data.extract_work_items_data()
             for item_data in work_items_data:
@@ -209,7 +211,7 @@ class WorkOrdersService:
                 item_data['total_price'] = item_data['quantity'] * item_data['unit_price']
                 work_item = WorkOrderItems(**item_data)
                 self.db.add(work_item)
-
+            
             # Extract and create vendor data
             vendors_data = request_data.extract_vendor_data()
             for vendor_data in vendors_data:
@@ -217,13 +219,19 @@ class WorkOrdersService:
                 work_vendor = WorkOrderVendors(**vendor_data)
                 self.db.add(work_vendor)
             
+            # Extract and create budget entries data
+            budget_entries_data = self.extract_budget_entries_data(request_data, work_order_id)
+            for budget_data in budget_entries_data:
+                budget_item = WorkOrderBudgets(**budget_data)
+                self.db.add(budget_item)
+            
             # Extract and create authorizations data
             authorizations_data = request_data.extract_authorizations_data()
             for auth_data in authorizations_data:
                 auth_data['work_order_id'] = work_order_id
                 authorization = Authorizations(**auth_data)
                 self.db.add(authorization)
-
+            
             # Commit transaction
             self.db.commit()
             self.db.refresh(work_order)
@@ -232,6 +240,7 @@ class WorkOrdersService:
             response = {
                 "work_order": work_order,
                 "work_items_count": len(work_items_data),
+                "budget_entries_count": len(budget_entries_data),
                 "total_cost": request_data.totalCost
             }
             
@@ -239,23 +248,35 @@ class WorkOrdersService:
             print(f"WORK ORDER CREATED SUCCESSFULLY")
             print(f"Work Order: {work_order_number}")
             print(f"Total Items: {len(work_items_data)}")
+            print(f"Budget Entries: {len(budget_entries_data)}")
             print(f"{'='*80}")
             
             return response
             
-        except requests.exceptions.RequestException as e:
-            # Rollback database transaction on API call failure
-            self.db.rollback()
-            raise Exception(f"Failed to call budget API: {str(e)}")
-            
         except Exception as e:
-            # Rollback database transaction on any other error
             self.db.rollback()
             print(f"Error creating work order: {str(e)}")
             import traceback
             traceback.print_exc()
             raise Exception(f"Failed to create work order: {str(e)}")
     
+    def extract_budget_entries_data(self, request_data: WorkOrdersCreateRequest, work_order_id: int) -> List[Dict[str, Any]]:
+        """Extract budget entries data for work_order_budgets table"""
+        budget_entries = []
+        
+        for idx, entry in enumerate(request_data.budgetEntries):
+            budget_entries.append({
+                'work_order_id': work_order_id,
+                'budget_index': entry.get('budgetIndex', ''),
+                'budget_name': entry.get('budgetName', ''),
+                'cost_estimation': float(entry.get('costEstimation', 0)),
+                'budget_remaining': float(entry.get('budgetRemaining', entry.get('budgetRemaining', 0))),
+                'under_over': entry.get('underOver', ''),
+                'entry_order': entry.get('entryOrder', idx + 1),
+                'is_selected': bool(entry.get('isSelected', False))
+            })
+        
+        return budget_entries
     def _process_supporting_documents_put_style(self, request_data: WorkOrdersCreateRequest, work_order_id: int, work_order_number: str):
         """Process supporting documents and upload files to MinIO - UPDATED to match PUT style"""
         try:
@@ -383,7 +404,9 @@ class WorkOrdersService:
                 joinedload(WorkOrders.vendors),
                 joinedload(WorkOrders.supporting_documents),
                 joinedload(WorkOrders.authorizations),
-                joinedload(WorkOrders.files)
+                joinedload(WorkOrders.files),
+                joinedload(WorkOrders.budget_entries)  # Add this line
+
             )
             .filter(WorkOrders.id == work_orders_id)
             .first()
@@ -440,6 +463,20 @@ class WorkOrdersService:
                     "vendorName": vendor.vendor_name
                 }
                 for vendor in work_order.vendors
+            ],
+            "budgetEntries": [  # Add this section
+                {
+                    "id": budget.id,
+                    "workOrderId": budget.work_order_id,
+                    "budgetIndex": budget.budget_index,
+                    "budgetName": budget.budget_name,
+                    "costEstimation": float(budget.cost_estimation) if budget.cost_estimation else None,
+                    "budgetRemaining": float(budget.budget_remaining) if budget.budget_remaining else None,
+                    "underOver": budget.under_over,
+                    "entryOrder": budget.entry_order,
+                    "isSelected": bool(budget.is_selected)
+                }
+                for budget in work_order.budget_entries
             ],
             'supportingDocuments': [
                 {
@@ -776,6 +813,11 @@ class WorkOrdersService:
                 Authorizations.work_order_id == work_orders_id
             ).delete(synchronize_session=False)
             
+            self.db.query(WorkOrderBudgets).filter(
+                WorkOrderBudgets.work_order_id == work_orders_id
+            ).delete(synchronize_session=False)
+            
+
             self.db.flush()
             
             # --- RE-CREATE ALL DATA ---
@@ -793,6 +835,12 @@ class WorkOrdersService:
                 work_item = WorkOrderItems(**item_data)
                 self.db.add(work_item)
             
+            # Create budget entries
+            budget_entries_data = self.extract_budget_entries_data(request_data, work_orders_id)  # Add this
+            for budget_data in budget_entries_data:
+                budget_item = WorkOrderBudgets(**budget_data)
+                self.db.add(budget_item)
+                
             # Create vendors
             vendors_data = request_data.extract_vendor_data()
             for vendor_data in vendors_data:

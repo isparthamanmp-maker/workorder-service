@@ -1,5 +1,5 @@
 # src/models/base.py
-from sqlalchemy import Column, Integer, String, Text, Date, DateTime, SmallInteger, Numeric, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, Date, DateTime, SmallInteger, Numeric, ForeignKey, Boolean, BigInteger
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
@@ -108,9 +108,17 @@ class WorkOrders(Base):
     vendors = relationship("WorkOrderVendors", back_populates="work_order", cascade="all, delete-orphan")
     supporting_documents = relationship("SupportingDocuments", back_populates="work_order", cascade="all, delete-orphan")
     authorizations = relationship("Authorizations", back_populates="work_order", cascade="all, delete-orphan")
+    budget_entries = relationship(
+        "WorkOrderBudgets",
+        back_populates="work_order",
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
+
 
     def __repr__(self):
         return f"<WorkOrders(id={self.id}, document_number='{self.document_number}')>"
+        
 
 
 class WorkOrderFiles(Base):
@@ -168,3 +176,35 @@ class User(Base):
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}')>"
+
+class WorkOrderBudgets(Base):
+    """budgets model"""
+    __tablename__ = "work_order_budgets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    work_order_id = Column(Integer, ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False)  # Add ForeignKey
+    budget_index = Column(String(50), nullable=False, unique=True)
+    budget_name = Column(String(255), nullable=False)
+    cost_estimation = Column(BigInteger, nullable=False)
+    budget_remaining = Column(BigInteger, nullable=False)
+    under_over = Column(Numeric(15, 2), nullable=False)
+    entry_order = Column(Integer, nullable=False)
+    is_selected = Column(Boolean, nullable=False, default=False)
+
+    created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp()
+    )
+
+    work_order = relationship("WorkOrders", back_populates="budget_entries")
+
+    def __repr__(self):
+        return (
+            f"<Budgets(id={self.id}, "
+            f"budget_index='{self.budget_index}', "
+            f"budget_name='{self.budget_name}')>"
+        )
+        
