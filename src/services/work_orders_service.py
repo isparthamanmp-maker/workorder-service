@@ -1465,6 +1465,7 @@ class WorkOrdersService:
         # Authorization boxes
         auth_boxes = [
             ("Prepared By:", auth_data.get('preparedBy', '')),
+            ("Approved By Dep. Head:", auth_data.get('deptHeadName', '')),
             ("Verified by Acc. Dept.:", auth_data.get('accDeptName', '')),
             ("Approved by BM:", auth_data.get('bmName', '')),
             ("Approved by Director:", auth_data.get('directorName', '')),
@@ -1474,6 +1475,7 @@ class WorkOrdersService:
         # Get dates
         auth_dates = {
             "Prepared By:": auth_data.get('preparedDate', ''),
+            "Approved By Dep. Head:": auth_data.get('deptHeadDate', ''),
             "Verified by Acc. Dept.:": auth_data.get('accDeptDate', ''),
             "Approved by BM:": auth_data.get('bmDate', ''),
             "Approved by Director:": auth_data.get('directorDate', ''),
