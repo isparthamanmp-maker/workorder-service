@@ -16,6 +16,23 @@ import base64
 from datetime import datetime
 from sqlalchemy import extract
 
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import io
+import requests
+from urllib.parse import urlparse
+from PyPDF2 import PdfReader, PdfWriter
+import img2pdf
+from PIL import Image as PILImage
+import tempfile
+
 class WorkOrdersService:
     """work_orders service layer using Pydantic schemas"""
     
@@ -1033,3 +1050,566 @@ class WorkOrdersService:
             import traceback
             traceback.print_exc()
             raise
+
+    # src/services/work_orders_service.py
+    # Update the generate_work_order_pdf method with these changes
+
+    def generate_work_order_pdf(self, work_order_data: dict) -> io.BytesIO:
+        """Generate PDF from work order data"""
+        buffer = io.BytesIO()
+        
+        # Create the PDF document
+        pdf_doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=20,
+            leftMargin=20,
+            topMargin=20,
+            bottomMargin=20
+        )
+
+        # Calculate page width for full-width tables (subtract left and right margins)
+        page_width = A4[0] - 40  # 595.27 - 40 = 555.27 points for A4
+        
+        # Styles
+        styles = getSampleStyleSheet()
+        
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            alignment=TA_CENTER,
+            spaceAfter=12,
+            fontName='Helvetica-Bold'
+        )
+        
+        heading_style = ParagraphStyle(
+            'HeadingStyle',
+            parent=styles['Heading2'],
+            fontSize=11,
+            fontName='Helvetica-Bold',
+            spaceBefore=6,
+            spaceAfter=4
+        )
+        
+        normal_style = ParagraphStyle(
+            'NormalStyle',
+            parent=styles['Normal'],
+            fontSize=9,
+            fontName='Helvetica',
+            spaceAfter=2
+        )
+        
+        table_header_style = ParagraphStyle(
+            'TableHeader',
+            parent=styles['Normal'],
+            fontSize=9,
+            fontName='Helvetica-Bold',
+            alignment=TA_CENTER,
+            textColor=colors.black
+        )
+        
+        # Story builder (list of elements)
+        story = []
+        
+        # Extract data
+        work_order = work_order_data['workOrder']
+        work_items = work_order_data['workItems']
+        tender_vendors = work_order_data['tenderVendorData']
+        budget_entries = work_order_data.get('budgetEntries', [])
+        supporting_docs = work_order_data.get('supportingDocuments', [])
+        authorizations_list = work_order_data.get('authorizations', [{}])
+        
+        # Format currency function
+        def format_currency(amount):
+            if amount is None:
+                return "Rp 0"
+            try:
+                return f"Rp {float(amount):,.0f}".replace(',', '.')
+            except (ValueError, TypeError):
+                return f"Rp {amount}" if amount else "Rp 0"
+        
+        # 1. Header
+        story.append(Paragraph("PT. Nusa Mandiri Properti", normal_style))
+        story.append(Spacer(1, 4))
+        story.append(Paragraph("WORK ORDER REQUEST FORM", title_style))
+        story.append(Spacer(1, 8))
+        
+        # 2. Basic Information - Fixed column widths
+
+        # Calculate column widths for full-width layout
+        # Left side: Request Type and To (40% of page width)
+        # Right side: Date and WOR No (60% of page width)
+        left_width = page_width * 0.4
+        right_width = page_width * 0.6
+
+        # Create left table
+        left_data = [
+            ["Request Type:", "Item Request" if work_order.get('requestType') == 'item_request' else "Work Order Request"],
+            ["To:", "Acc & Purchasing Department"]
+        ]
+
+        left_table = Table(left_data, colWidths=[left_width * 0.3, left_width * 0.7])
+        left_table.setStyle(TableStyle([
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            # All columns left-aligned
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            # Consistent padding - NO BORDERS
+            ('LEFTPADDING', (0,0), (-1,-1), 4),
+            ('RIGHTPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            # NO GRID, NO BOX, NO BORDERS
+            # Removed all border/line styling
+        ]))
+
+        # Create right table
+        right_data = [
+            ["Date:", work_order.get('requestDate', 'N/A')],
+            ["WOR No:", work_order.get('documentNumber', 'N/A')]
+        ]
+
+        right_table = Table(right_data, colWidths=[right_width * 0.2, right_width * 0.8])
+        right_table.setStyle(TableStyle([
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            # All columns left-aligned
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            # Consistent padding - NO BORDERS
+            ('LEFTPADDING', (0,0), (-1,-1), 4),
+            ('RIGHTPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            # NO GRID, NO BOX, NO BORDERS
+            # Removed all border/line styling
+        ]))
+
+        # Combine tables side by side to span full width
+        basic_info_table = Table([[left_table, right_table]], colWidths=[left_width, right_width])
+        basic_info_table.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ]))
+        story.append(basic_info_table)
+        story.append(Spacer(1, 8))
+        
+        # 3. Request Submitted By
+        story.append(Paragraph(f"1. Request is submitted by: {work_order.get('submittedBy', 'N/A')}", heading_style))
+        story.append(Spacer(1, 4))
+        
+        # 4. Schedule of Works - Full width
+        schedule_text = f"2. Schedule of Works: Start Date: {work_order.get('startDate', 'N/A')}  End Date: {work_order.get('endDate', 'N/A')}"
+        if work_order.get('isUrgent'):
+            schedule_text += "  [URGENT]"
+        story.append(Paragraph(schedule_text, heading_style))
+        story.append(Spacer(1, 4))
+        
+        # 5. Scope of Works - FULL WIDTH
+        story.append(Paragraph("3. Scope of Works", heading_style))
+        story.append(Spacer(1, 2))
+        
+        # Scope description - Full width with border
+        scope_text = work_order.get('scopeOfWorks', 'N/A')
+        
+        # Create a full width bordered box for scope of works
+        scope_data = [[Paragraph(scope_text, normal_style)]]
+        scope_table = Table(scope_data, colWidths=[page_width])
+        scope_table.setStyle(TableStyle([
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOX', (0,0), (-1,-1), 0.5, colors.grey),
+            ('TOPPADDING', (0,0), (-1,-1), 8),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ]))
+        story.append(scope_table)
+        story.append(Spacer(1, 8))
+        
+        # Work Items Table - Full width
+        story.append(Paragraph("Description:", normal_style))
+        story.append(Spacer(1, 2))
+        
+        if work_items:
+            # Prepare table data
+            table_data = [['Description', 'Qty', 'Unit Price', 'Total']]
+            for item in work_items:
+                quantity = float(item.get('quantity', 0)) if item.get('quantity') else 0
+                unit_price = float(item.get('unitPrice', 0)) if item.get('unitPrice') else 0
+                total_price = float(item.get('totalPrice', quantity * unit_price))
+                
+                table_data.append([
+                    item.get('description', ''),
+                    str(int(quantity)) if quantity == int(quantity) else str(quantity),
+                    format_currency(unit_price),
+                    format_currency(total_price)
+                ])
+            
+            # Create table with full width columns
+            col_widths = [page_width - 240, 60, 90, 90]  # Description takes remaining width
+            table = Table(table_data, colWidths=col_widths)
+            table.setStyle(TableStyle([
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTNAME', (0,1), (-1,-1), 'Helvetica'),
+                ('FONTSIZE', (0,0), (-1,-1), 9),
+                ('ALIGN', (1,0), (1,-1), 'CENTER'),
+                ('ALIGN', (2,0), (-1,-1), 'RIGHT'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('LEFTPADDING', (0,0), (-1,-1), 4),
+                ('RIGHTPADDING', (0,0), (-1,-1), 4),
+            ]))
+            story.append(table)
+        else:
+            story.append(Paragraph("No work items specified", normal_style))
+        
+        story.append(Spacer(1, 8))
+        
+        # 6. Attachments / Supporting Documents
+        story.append(Paragraph("Attachment / Supporting Document:", heading_style))
+        story.append(Spacer(1, 2))
+        
+        # Group files by document type
+        if supporting_docs:
+            for doc in supporting_docs:
+                doc_type = doc.get('documentType', '')
+                files = doc.get('files', [])
+                doc_label = doc_type.replace('_', ' ').title()
+                check = "☑" if doc.get('hasDocument', False) and len(files) > 0 else "☐"
+                file_count = f" ({len(files)} files)" if files else ""
+                story.append(Paragraph(f"{check} {doc_label}{file_count}", normal_style))
+        else:
+            story.append(Paragraph("No attachments specified", normal_style))
+        
+        story.append(Spacer(1, 8))
+        
+        # 7. Type of Cost
+        story.append(Paragraph("4. TYPE OF COST", heading_style))
+        story.append(Spacer(1, 2))
+        
+        # Budget Status
+        is_budgeted = work_order.get('budgetStatus') == 'budgeted'
+        budget_status = "BUDGETED" if is_budgeted else "UNBUDGETED"
+        story.append(Paragraph(f"Budget Status: {budget_status}", normal_style))
+        
+        # Cost Type
+        cost_type = work_order.get('costType', 'CAPEX')
+        story.append(Paragraph(f"Cost Type: {cost_type}", normal_style))
+        story.append(Spacer(1, 4))
+        
+        # Budget Allocation Table - FULL WIDTH with consistent margins
+        if budget_entries:
+            story.append(Paragraph("Budget Allocation:", normal_style))
+            story.append(Spacer(1, 2))
+            
+            # Filter only selected budget entries
+            selected_budgets = [b for b in budget_entries if b.get('isSelected', False)]
+            
+            if selected_budgets:
+                # Prepare table data
+                table_data = [['No.', 'Budget Index', 'Budget Name', 'Cost Estimation', 'Remaining', 'Under/Over']]
+                
+                total_cost_est = 0
+                total_remaining = 0
+                total_under_over = 0
+                
+                for idx, entry in enumerate(selected_budgets, 1):
+                    cost_est = float(entry.get('costEstimation', 0))
+                    remaining = float(entry.get('budgetRemaining', 0))
+                    under_over = float(entry.get('underOver', 0))
+                    
+                    total_cost_est += cost_est
+                    total_remaining += remaining
+                    total_under_over += under_over
+                    
+                    table_data.append([
+                        str(idx),
+                        entry.get('budgetIndex', ''),
+                        entry.get('budgetName', ''),
+                        format_currency(cost_est),
+                        format_currency(remaining),
+                        format_currency(under_over)
+                    ])
+                
+                # Add total row
+                table_data.append([
+                    '', '', 'Total:',
+                    format_currency(total_cost_est),
+                    format_currency(total_remaining),
+                    format_currency(total_under_over)
+                ])
+                
+                # Calculate full width columns for budget table
+                # Distribute width across columns to match other tables
+                col_widths = [30, 110, 160, 100, 100, 100]
+                # Adjust to fit page width
+                total_width = sum(col_widths)
+                scale_factor = page_width / total_width
+                col_widths = [w * scale_factor for w in col_widths]
+                
+                table = Table(table_data, colWidths=col_widths)
+                table.setStyle(TableStyle([
+                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('FONTNAME', (0,1), (-1,-2), 'Helvetica'),
+                    ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0,0), (-1,-1), 9),
+                    ('ALIGN', (0,0), (0,-1), 'CENTER'),
+                    ('ALIGN', (1,0), (1,-1), 'LEFT'),
+                    ('ALIGN', (2,0), (2,-1), 'LEFT'),
+                    ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
+                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                    ('GRID', (0,0), (-1,-2), 0.5, colors.grey),
+                    ('GRID', (0,-1), (-1,-1), 0.5, colors.grey),
+                    ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+                    ('BACKGROUND', (0,-1), (-1,-1), colors.whitesmoke),
+                    ('TOPPADDING', (0,0), (-1,-1), 4),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                    ('LEFTPADDING', (0,0), (-1,-1), 4),
+                    ('RIGHTPADDING', (0,0), (-1,-1), 4),
+                ]))
+                story.append(table)
+            else:
+                story.append(Paragraph("No budget entries selected", normal_style))
+        else:
+            story.append(Paragraph("No budget entries specified", normal_style))
+        
+        story.append(Spacer(1, 4))
+        
+        # Charge to Tenant
+        charge_to_tenant = work_order.get('chargeToTenant', False)
+        charge_text = "YES (forward to billing request)" if charge_to_tenant else "NO"
+        story.append(Paragraph(f"Charge to Tenant / Vendor: {charge_text}", normal_style))
+        story.append(Spacer(1, 8))
+        
+        # 8. Vendor / Contractor
+        story.append(Paragraph("5. VENDOR / CONTRACTOR", heading_style))
+        story.append(Spacer(1, 2))
+        
+        # Recommended Contractor
+        vendor_name = work_order.get('recommendedContractor', 'N/A')
+        vendor_reason = work_order.get('reason', 'N/A')
+        story.append(Paragraph(f"Recommended Contractor: {vendor_name}", normal_style))
+        story.append(Paragraph(f"Reason: {vendor_reason}", normal_style))
+        story.append(Spacer(1, 2))
+        
+        # Vendor Selection Method
+        vendor_method = work_order.get('vendorSelectionMethod', 'sole_source_vendor')
+        method_text = "tender process" if 'tender' in str(vendor_method) else "sole source vendor"
+        story.append(Paragraph(f"Vendor Selection Method: {method_text}", normal_style))
+        story.append(Spacer(1, 2))
+        
+        # Tender Vendor Comparison - FULL WIDTH
+        if tender_vendors and len(tender_vendors) > 0:
+            story.append(Paragraph("Tender Vendor Comparison:", normal_style))
+            story.append(Spacer(1, 2))
+            
+            # Prepare table data - show only first 3
+            table_data = [['No.', 'Name of Vendor']]
+            for idx, vendor in enumerate(tender_vendors[:3], 1):
+                table_data.append([str(idx), vendor.get('vendorName', '')])
+            
+            # Full width columns for vendor table
+            col_widths = [30, page_width - 50]  # No. column small, Name takes rest
+            
+            table = Table(table_data, colWidths=col_widths)
+            table.setStyle(TableStyle([
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTNAME', (0,1), (-1,-1), 'Helvetica'),
+                ('FONTSIZE', (0,0), (-1,-1), 9),
+                ('ALIGN', (0,0), (0,-1), 'CENTER'),
+                ('ALIGN', (1,0), (1,-1), 'LEFT'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('LEFTPADDING', (0,0), (-1,-1), 4),
+                ('RIGHTPADDING', (0,0), (-1,-1), 4),
+            ]))
+            story.append(table)
+        
+        story.append(Spacer(1, 8))
+        
+        # 9. Authorization - FULL WIDTH
+        story.append(Paragraph("6. AUTHORIZATION", heading_style))
+        story.append(Spacer(1, 4))
+        
+        # Create authorization section
+        auth_data = authorizations_list[0] if authorizations_list else {}
+        
+        # Authorization boxes
+        auth_boxes = [
+            ("Prepared By:", auth_data.get('preparedBy', '')),
+            ("Verified by Acc. Dept.:", auth_data.get('accDeptName', '')),
+            ("Approved by BM:", auth_data.get('bmName', '')),
+            ("Approved by Director:", auth_data.get('directorName', '')),
+            ("Received by Purchasing:", auth_data.get('purchasingName', ''))
+        ]
+        
+        # Get dates
+        auth_dates = {
+            "Prepared By:": auth_data.get('preparedDate', ''),
+            "Verified by Acc. Dept.:": auth_data.get('accDeptDate', ''),
+            "Approved by BM:": auth_data.get('bmDate', ''),
+            "Approved by Director:": auth_data.get('directorDate', ''),
+            "Received by Purchasing:": auth_data.get('purchasingDate', '')
+        }
+        
+        # Create table for auth boxes - full width with equal columns
+        auth_table_data = []
+        row_data = []
+        for i, (label, value) in enumerate(auth_boxes):
+            date_value = auth_dates.get(label, '')
+            date_text = f"Date: {date_value}" if date_value else "Date: "
+            box_content = f"{label}\n\n{value}\n\n{date_text}"
+            row_data.append(box_content)
+            if (i + 1) % 3 == 0 or i == len(auth_boxes) - 1:
+                while len(row_data) < 3:
+                    row_data.append('')
+                auth_table_data.append(row_data)
+                row_data = []
+        
+        # Full width columns for auth boxes
+        auth_col_width = page_width / 3
+        
+        table = Table(auth_table_data, colWidths=[auth_col_width, auth_col_width, auth_col_width])
+        table.setStyle(TableStyle([
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+            ('FONTSIZE', (0,0), (-1,-1), 8),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('BOX', (0,0), (-1,-1), 0.5, colors.grey),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('TOPPADDING', (0,0), (-1,-1), 8),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 8))
+        
+        # 10. Footer
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("NMP-F27 rev00-20240826", 
+                            ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, textColor=colors.grey)))
+        
+        # Build PDF
+        pdf_doc.build(story)
+        buffer.seek(0)
+        
+        return buffer
+    
+    def get_supporting_files(self, work_orders_id: int) -> List[dict]:
+        """Get all supporting files for a work order"""
+        try:
+            # Query all files for this work order
+            files = self.db.query(WorkOrderFiles).filter(
+                WorkOrderFiles.work_order_id == work_orders_id
+            ).all()
+            
+            file_list = []
+            for file in files:
+                file_list.append({
+                    'id': file.id,
+                    'file_name': file.file_name,
+                    'file_url': file.file_url,
+                    'file_size': file.file_size
+                })
+            
+            return file_list
+            
+        except Exception as e:
+            print(f"Error getting supporting files: {e}")
+            return []
+    
+    def download_file_from_minio(self, file_url: str) -> Optional[bytes]:
+        """Download file from MinIO"""
+        try:
+            # Extract object path from URL
+            parsed_url = urlparse(file_url)
+            path_parts = parsed_url.path.split(f'/{self.bucket_name}/')
+            
+            if len(path_parts) > 1:
+                object_path = path_parts[1]
+                
+                # Get file from MinIO
+                response = self.minio_client.get_object(self.bucket_name, object_path)
+                file_data = response.read()
+                response.close()
+                response.release_conn()
+                
+                return file_data
+            else:
+                print(f"Could not extract object path from URL: {file_url}")
+                return None
+                
+        except Exception as e:
+            print(f"Error downloading file from MinIO: {e}")
+            return None
+    
+    def convert_to_pdf(self, file_data: bytes, file_name: str) -> Optional[io.BytesIO]:
+        """Convert file to PDF format"""
+        try:
+            file_ext = os.path.splitext(file_name)[1].lower()
+            
+            # If already PDF, return as is
+            if file_ext == '.pdf':
+                return io.BytesIO(file_data)
+            
+            # Convert images to PDF
+            if file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
+                # Use PIL to open image
+                image = PILImage.open(io.BytesIO(file_data))
+                
+                # Convert to RGB if necessary
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                
+                # Create PDF
+                pdf_buffer = io.BytesIO()
+                image.save(pdf_buffer, format='PDF')
+                pdf_buffer.seek(0)
+                return pdf_buffer
+            
+            # For other file types, create a cover page
+            else:
+                buffer = io.BytesIO()
+                c = canvas.Canvas(buffer, pagesize=A4)
+                
+                # Add title
+                c.setFont("Helvetica-Bold", 16)
+                c.drawString(1*inch, 10*inch, "Supporting Document")
+                
+                # Add file info
+                c.setFont("Helvetica", 12)
+                c.drawString(1*inch, 9.5*inch, f"File Name: {file_name}")
+                c.drawString(1*inch, 9*inch, f"File Type: {file_ext.upper()}")
+                c.drawString(1*inch, 8.5*inch, "File is not a PDF or image format.")
+                c.drawString(1*inch, 8*inch, "Please open the original file in the system.")
+                
+                c.save()
+                buffer.seek(0)
+                return buffer
+                
+        except Exception as e:
+            print(f"Error converting to PDF: {e}")
+            
+            # Create error page
+            buffer = io.BytesIO()
+            c = canvas.Canvas(buffer, pagesize=A4)
+            c.setFont("Helvetica", 12)
+            c.drawString(1*inch, 10*inch, f"Error processing file: {file_name}")
+            c.save()
+            buffer.seek(0)
+            return buffer

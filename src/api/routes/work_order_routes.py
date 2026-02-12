@@ -5,9 +5,87 @@ from src.services.work_orders_service import WorkOrdersService
 from src.api.dependencies import get_work_orders_service
 from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersResponse, WorkOrdersCreateRequest, WorkOrdersFullResponse, DocumentNumberResponse, WorkOrdersUpdateRequest
 from datetime import datetime
+from fastapi.responses import Response
+import base64
+from io import BytesIO
+import tempfile
+import os
+from PyPDF2 import PdfMerger, PdfReader
+import requests
 
 router = APIRouter(prefix="/api/v1/work_orders", tags=["work_orders"])  # Fixed typo: work_orderss -> work_orders
 
+@router.get("/{work_orders_id}/pdf")
+def generate_work_order_pdf(
+    work_orders_id: int = Path(..., ge=1, description="WorkOrders ID"),
+    work_orders_service: WorkOrdersService = Depends(get_work_orders_service)
+):
+    """Generate PDF for work order including all supporting files"""
+    try:
+        # Get work order data with all relationships
+        work_order_data = work_orders_service.get_work_orders(work_orders_id)
+        if not work_order_data:
+            raise HTTPException(status_code=404, detail="Work order not found")
+        
+        # Generate main PDF
+        pdf_buffer = work_orders_service.generate_work_order_pdf(work_order_data)
+        
+        # Get all supporting files from MinIO and merge them
+        files = work_orders_service.get_supporting_files(work_orders_id)
+        
+        if files:
+            # Create PDF merger
+            merger = PdfMerger()
+            
+            # Add main PDF
+            merger.append(pdf_buffer)
+            
+            # Download and append each file
+            for file_info in files:
+                try:
+                    # Download file from MinIO
+                    file_data = work_orders_service.download_file_from_minio(file_info['file_url'])
+                    
+                    if file_data:
+                        # Convert to PDF if needed and append
+                        pdf_page = work_orders_service.convert_to_pdf(file_data, file_info['file_name'])
+                        if pdf_page:
+                            merger.append(pdf_page)
+                except Exception as e:
+                    print(f"Error processing file {file_info['file_name']}: {e}")
+                    continue
+            
+            # Save merged PDF
+            merged_pdf = BytesIO()
+            merger.write(merged_pdf)
+            merger.close()
+            
+            pdf_data = merged_pdf.getvalue()
+        else:
+            pdf_data = pdf_buffer.getvalue()
+        
+        # Generate filename
+        doc_number = work_order_data['workOrder']['documentNumber'].replace('/', '_')
+        filename = f"Work_Order_{doc_number}_{work_orders_id}.pdf"
+        
+        # Return PDF response
+        return Response(
+            content=pdf_data,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"',
+                "Content-Type": "application/pdf"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error generating PDF: {str(e)}"
+        )
+    
 @router.post("/", response_model=WorkOrdersResponse, status_code=status.HTTP_201_CREATED)
 def create_work_orders(
     work_orders: WorkOrdersCreate,
