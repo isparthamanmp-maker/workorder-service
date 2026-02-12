@@ -1211,20 +1211,21 @@ class WorkOrdersService:
         story.append(Paragraph(schedule_text, heading_style))
         story.append(Spacer(1, 4))
         
-        # 5. Scope of Works - FULL WIDTH
+        # 5. Scope of Works
         story.append(Paragraph("3. Scope of Works", heading_style))
         story.append(Spacer(1, 2))
-        
-        # Scope description - Full width with border
+
+        # Scope description - Full width bordered box with text wrapping
         scope_text = work_order.get('scopeOfWorks', 'N/A')
-        
-        # Create a full width bordered box for scope of works
-        scope_data = [[Paragraph(scope_text, normal_style)]]
+
+        # Use Paragraph for automatic text wrapping
+        scope_para = Paragraph(scope_text, normal_style)
+        scope_data = [[scope_para]]
         scope_table = Table(scope_data, colWidths=[page_width])
         scope_table.setStyle(TableStyle([
             ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
             ('FONTSIZE', (0,0), (-1,-1), 9),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),  # Changed to TOP for better wrapping
             ('BOX', (0,0), (-1,-1), 0.5, colors.grey),
             ('TOPPADDING', (0,0), (-1,-1), 8),
             ('BOTTOMPADDING', (0,0), (-1,-1), 8),
@@ -1233,42 +1234,49 @@ class WorkOrdersService:
         ]))
         story.append(scope_table)
         story.append(Spacer(1, 8))
-        
-        # Work Items Table - Full width
+
+        # Work Items Table - Full width with wrapped description
         story.append(Paragraph("Description:", normal_style))
         story.append(Spacer(1, 2))
-        
+
         if work_items:
-            # Prepare table data
+            # Prepare table data with Paragraph for description to enable wrapping
             table_data = [['Description', 'Qty', 'Unit Price', 'Total']]
+            
             for item in work_items:
                 quantity = float(item.get('quantity', 0)) if item.get('quantity') else 0
                 unit_price = float(item.get('unitPrice', 0)) if item.get('unitPrice') else 0
                 total_price = float(item.get('totalPrice', quantity * unit_price))
                 
+                # Wrap description in Paragraph for text wrapping
+                desc_text = item.get('description', '')
+                desc_para = Paragraph(desc_text, normal_style)
+                
                 table_data.append([
-                    item.get('description', ''),
+                    desc_para,  # Use Paragraph instead of plain text
                     str(int(quantity)) if quantity == int(quantity) else str(quantity),
                     format_currency(unit_price),
                     format_currency(total_price)
                 ])
             
             # Create table with full width columns
+            # Make description column wider to accommodate wrapped text
             col_widths = [page_width - 240, 60, 90, 90]  # Description takes remaining width
-            table = Table(table_data, colWidths=col_widths)
+            table = Table(table_data, colWidths=col_widths, repeatRows=1)
             table.setStyle(TableStyle([
                 ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
                 ('FONTNAME', (0,1), (-1,-1), 'Helvetica'),
                 ('FONTSIZE', (0,0), (-1,-1), 9),
                 ('ALIGN', (1,0), (1,-1), 'CENTER'),
                 ('ALIGN', (2,0), (-1,-1), 'RIGHT'),
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),  # Changed to TOP for wrapped text
                 ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
                 ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
                 ('TOPPADDING', (0,0), (-1,-1), 4),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 4),
                 ('LEFTPADDING', (0,0), (-1,-1), 4),
                 ('RIGHTPADDING', (0,0), (-1,-1), 4),
+                ('WORDWRAP', (0,1), (0,-1), True),  # Enable word wrap for description column
             ]))
             story.append(table)
         else:
@@ -1309,6 +1317,7 @@ class WorkOrdersService:
         story.append(Spacer(1, 4))
         
         # Budget Allocation Table - FULL WIDTH with consistent margins
+        # 7. Type of Cost - Budget Allocation Table with wrapped Budget Name
         if budget_entries:
             story.append(Paragraph("Budget Allocation:", normal_style))
             story.append(Spacer(1, 2))
@@ -1317,7 +1326,7 @@ class WorkOrdersService:
             selected_budgets = [b for b in budget_entries if b.get('isSelected', False)]
             
             if selected_budgets:
-                # Prepare table data
+                # Prepare table data with Paragraph for Budget Name to enable wrapping
                 table_data = [['No.', 'Budget Index', 'Budget Name', 'Cost Estimation', 'Remaining', 'Under/Over']]
                 
                 total_cost_est = 0
@@ -1333,10 +1342,14 @@ class WorkOrdersService:
                     total_remaining += remaining
                     total_under_over += under_over
                     
+                    # Wrap Budget Name in Paragraph for text wrapping
+                    budget_name_text = entry.get('budgetName', '')
+                    budget_name_para = Paragraph(budget_name_text, normal_style)
+                    
                     table_data.append([
                         str(idx),
                         entry.get('budgetIndex', ''),
-                        entry.get('budgetName', ''),
+                        budget_name_para,  # Use Paragraph instead of plain text
                         format_currency(cost_est),
                         format_currency(remaining),
                         format_currency(under_over)
@@ -1351,14 +1364,14 @@ class WorkOrdersService:
                 ])
                 
                 # Calculate full width columns for budget table
-                # Distribute width across columns to match other tables
+                # Make Budget Name column wider to accommodate wrapped text
                 col_widths = [30, 110, 160, 100, 100, 100]
                 # Adjust to fit page width
                 total_width = sum(col_widths)
                 scale_factor = page_width / total_width
                 col_widths = [w * scale_factor for w in col_widths]
                 
-                table = Table(table_data, colWidths=col_widths)
+                table = Table(table_data, colWidths=col_widths, repeatRows=1)
                 table.setStyle(TableStyle([
                     ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
                     ('FONTNAME', (0,1), (-1,-2), 'Helvetica'),
@@ -1366,9 +1379,9 @@ class WorkOrdersService:
                     ('FONTSIZE', (0,0), (-1,-1), 9),
                     ('ALIGN', (0,0), (0,-1), 'CENTER'),
                     ('ALIGN', (1,0), (1,-1), 'LEFT'),
-                    ('ALIGN', (2,0), (2,-1), 'LEFT'),
+                    ('ALIGN', (2,0), (2,-1), 'LEFT'),  # Budget Name left-aligned
                     ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
-                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                    ('VALIGN', (0,0), (-1,-1), 'TOP'),  # Changed to TOP for wrapped text
                     ('GRID', (0,0), (-1,-2), 0.5, colors.grey),
                     ('GRID', (0,-1), (-1,-1), 0.5, colors.grey),
                     ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
@@ -1377,6 +1390,7 @@ class WorkOrdersService:
                     ('BOTTOMPADDING', (0,0), (-1,-1), 4),
                     ('LEFTPADDING', (0,0), (-1,-1), 4),
                     ('RIGHTPADDING', (0,0), (-1,-1), 4),
+                    ('WORDWRAP', (2,1), (2,-2), True),  # Enable word wrap for Budget Name column
                 ]))
                 story.append(table)
             else:
