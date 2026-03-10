@@ -13,7 +13,6 @@ import binascii
 from minio import Minio
 from minio.error import S3Error
 import base64 
-from datetime import datetime
 from sqlalchemy import extract
 
 from reportlab.lib.pagesizes import letter, A4
@@ -571,8 +570,10 @@ class WorkOrdersService:
         
         return formatted
     
-    def get_work_orderss(self, skip: int = 0, limit: int = 100, order_by: str = "id") -> List[WorkOrders]:
-        """Get work_orderss with pagination and ordering"""
+    def get_work_orderss(self, skip: int = 0, limit: int = 100, order_by: str = "id", user_group: Optional[str] = None, approve_all: bool = False) -> List[WorkOrders]:
+        """Get work_orderss with pagination, ordering, and optional role-based filtering"""
+        from sqlalchemy import func, and_, or_, exists
+        
         # Map the alias to actual column names
         order_column_map = {
             "id": WorkOrders.id,
@@ -603,11 +604,123 @@ class WorkOrdersService:
         # Get the column to order by (default to id)
         order_column = order_column_map.get(order_by, WorkOrders.id)
         
-        return self.db.query(WorkOrders)\
-            .order_by(order_column)\
+        query = self.db.query(WorkOrders)
+
+        if user_group:
+            # Handle Admin roles - see everything
+            if user_group in ["Admin", "Administrator"]:
+                return query.order_by(order_column).offset(skip).limit(limit).all()
+
+            # Identify if it's a known approver group (matching the actual DB ENUM values)
+            auth_type = None
+            # Map: user group → their authorization step in the DB
+            GROUP_AUTH_TYPE = {
+                "ACC": "verified_by_acc_dept",
+                "BM": "approved_by_bm",
+                "GM": "approved_by_bm",    # GM = General Manager = Business Manager step
+                "DIR": "approved_by_director",
+                "PUR": "received_by_purchasing",
+            }
+            # Prerequisite: which step must be done BEFORE showing to this group
+            PREREQUISITE_AUTH_TYPE = {
+                "ACC": "dept_head",
+                "BM": "verified_by_acc_dept",
+                "GM": "verified_by_acc_dept",
+                "DIR": "approved_by_bm",
+                "PUR": "approved_by_director",
+            }
+            auth_type = GROUP_AUTH_TYPE.get(user_group)
+            prerequisite_auth_type = PREREQUISITE_AUTH_TYPE.get(user_group, "dept_head")
+
+            # Subquery for next pending authorization (minimal ID with authorization_date is NULL)
+            pending_auth_sub = self.db.query(func.min(Authorizations.id)).filter(
+                Authorizations.authorization_date == None,
+                Authorizations.work_order_id == WorkOrders.id
+            ).scalar_subquery()
+
+            # Filter logic:
+            # 1. Always see items submitted by your department/group
+            # 2. IF approve_all is TRUE AND you are a global approver (ACC, BM, etc.):
+            #    ALSO see items from ANY department IF it's your turn to approve
+            # 3. ELSE (regular user OR no approve_all):
+            #    ALSO see items from your department IF it's currently pending dept_head approval
+            
+            filter_conditions = [WorkOrders.submitted_by == user_group]
+
+            if approve_all and auth_type:
+                # Add condition: Actionable for my specific global role (any department)
+                # AND the prerequisite step must have already been approved
+                prerequisite_approved_sub = exists().where(
+                    and_(
+                        Authorizations.work_order_id == WorkOrders.id,
+                        Authorizations.authorization_type == prerequisite_auth_type,
+                        Authorizations.authorization_date != None
+                    )
+                )
+                filter_conditions.append(
+                    and_(
+                        prerequisite_approved_sub,
+                        exists().where(
+                            and_(
+                                Authorizations.work_order_id == WorkOrders.id,
+                                Authorizations.authorization_type == auth_type,
+                                Authorizations.authorization_date == None,
+                                Authorizations.id == pending_auth_sub
+                            )
+                        )
+                    )
+                )
+            else:
+                # Add condition: Pending dept_head approval for my own department
+                filter_conditions.append(
+                    exists().where(
+                        and_(
+                            Authorizations.work_order_id == WorkOrders.id,
+                            Authorizations.authorization_type == 'dept_head',
+                            Authorizations.authorization_date == None,
+                            Authorizations.id == pending_auth_sub,
+                            WorkOrders.submitted_by == user_group
+                        )
+                    )
+                )
+            
+            query = query.filter(or_(*filter_conditions))
+        
+        work_orders = query.order_by(order_column)\
             .offset(skip)\
             .limit(limit)\
             .all()
+
+        # Enrich each work order with the last approver name
+        wo_ids = [wo.id for wo in work_orders]
+        if wo_ids:
+            # Get the max-ID authorization with a date for each work order (= last approved step)
+            last_auth_subq = (
+                self.db.query(
+                    Authorizations.work_order_id,
+                    func.max(Authorizations.id).label("max_id")
+                )
+                .filter(
+                    Authorizations.work_order_id.in_(wo_ids),
+                    Authorizations.authorization_date != None
+                )
+                .group_by(Authorizations.work_order_id)
+                .subquery()
+            )
+            last_auths = (
+                self.db.query(Authorizations)
+                .join(last_auth_subq, and_(
+                    Authorizations.work_order_id == last_auth_subq.c.work_order_id,
+                    Authorizations.id == last_auth_subq.c.max_id
+                ))
+                .all()
+            )
+            # Build a map from work_order_id → last approver name
+            last_approver_map = {a.work_order_id: a.person_name for a in last_auths}
+            for wo in work_orders:
+                wo.last_approver = last_approver_map.get(wo.id) or None
+
+        return work_orders
     
     def update_work_orders(self, work_orders_id: int, work_orders_data: WorkOrdersUpdate) -> Optional[WorkOrders]:
         """Update work_orders record from Pydantic schema"""

@@ -45,53 +45,46 @@ class WorkOrdersHistoryService:
                     # 'received_by_purchasing': ('purchasingName', 'purchasingDate')
 
                     if work_orders_history.status == 'Approved':
-                        # Create authorization record
+                        # Determine authorization type based on user group
+                        auth_type = None
+                        if work_orders_history.UserGroup == work_order.submitted_by:
+                            auth_type = 'dept_head'
+                        elif work_orders_history.UserGroup == "ACC":
+                            auth_type = "verified_by_acc_dept"
+                        elif work_orders_history.UserGroup == "BM":
+                            auth_type = "approved_by_bm"
+                        elif work_orders_history.UserGroup == "DIR":
+                            auth_type = "approved_by_director"
+                        elif work_orders_history.UserGroup == "PUR":
+                            auth_type = "received_by_purchasing"
 
-                        if work_orders_history.UserGroup==work_order.submitted_by:
-                            # Create authorization record
-                            authorization = Authorizations(
-                                work_order_id=work_order.id,
-                                authorization_type='dept_head',  # Fixed value as requested
-                                person_name=work_orders_history.created_by or None,  # Assuming user field exists in history
-                                authorization_date=datetime.datetime.now().date()  # Today's date
-                            )
-                            self.db.add(authorization)
+                        if auth_type:
+                            # Fetch all authorizations for this work order ordered by ID (creation order)
+                            authorizations = self.db.query(Authorizations).filter(
+                                Authorizations.work_order_id == work_order.id
+                            ).order_by(Authorizations.id).all()
 
-                        if work_orders_history.UserGroup=="ACC":
-                            authorization = Authorizations(
-                                work_order_id=work_order.id,
-                                authorization_type="verified_by_acc_dept",  # Fixed value as requested
-                                person_name=work_orders_history.created_by or None,  # Assuming user field exists in history
-                                authorization_date=datetime.datetime.now().date()  # Today's date
-                            )
-                            self.db.add(authorization)
-                        
-                        if work_orders_history.UserGroup=="BM":
-                            authorization = Authorizations(
-                                work_order_id=work_order.id,
-                                authorization_type="approved_by_bm",  # Fixed value as requested
-                                person_name=work_orders_history.created_by or None,  # Assuming user field exists in history
-                                authorization_date=datetime.datetime.now().date()  # Today's date
-                            )
-                            self.db.add(authorization)
+                            # Find the target authorization record matching the user group's role
+                            target_auth = next((auth for auth in authorizations if auth.authorization_type == auth_type), None)
 
-                        if work_orders_history.UserGroup=="DIR":
-                            authorization = Authorizations(
-                                work_order_id=work_order.id,
-                                authorization_type="approved_by_director",  # Fixed value as requested
-                                person_name=work_orders_history.created_by or None,  # Assuming user field exists in history
-                                authorization_date=datetime.datetime.now().date()  # Today's date
-                            )
-                            self.db.add(authorization)
-
-                        if work_orders_history.UserGroup=="PUR":
-                            authorization = Authorizations(
-                                work_order_id=work_order.id,
-                                authorization_type="received_by_purchasing",  # Fixed value as requested
-                                person_name=work_orders_history.created_by or None,  # Assuming user field exists in history
-                                authorization_date=datetime.datetime.now().date()  # Today's date
-                            )
-                            self.db.add(authorization)
+                            if target_auth:
+                                # Enforce sequential approval
+                                for auth in authorizations:
+                                    if auth.id < target_auth.id and not auth.authorization_date:
+                                        raise ValueError(f"Sequential approval error: Prerequisite approval step '{auth.authorization_type}' is pending.")
+                                
+                                # Update existing authorization instead of creating duplicate
+                                target_auth.person_name = work_orders_history.created_by or None
+                                target_auth.authorization_date = datetime.datetime.now().date()
+                            else:
+                                # Fallback if for some reason the target auth doesn't exist (e.g. legacy data)
+                                authorization = Authorizations(
+                                    work_order_id=work_order.id,
+                                    authorization_type=auth_type,
+                                    person_name=work_orders_history.created_by or None,
+                                    authorization_date=datetime.datetime.now().date()
+                                )
+                                self.db.add(authorization)
 
                     if work_orders_history.status=='Cancel' or work_orders_history.status=='Rejected':
                         # Make budget API call

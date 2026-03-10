@@ -123,12 +123,14 @@ def get_work_orderss(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     search: Optional[str] = Query(None, description=f"Search in document_number, scope_of_works, budget_index"),
+    user_group: Optional[str] = Query(None, description="Filter by user group (e.g. BM, ACC, DIR)"),
+    approve_all: bool = Query(False, description="Show items from other departments if pending user's approval"),
     work_orders_service: WorkOrdersService = Depends(get_work_orders_service)
 ):
-    """Get all work_orderss with pagination and search"""
+    """Get all work_orderss with pagination, search, and role-based filtering"""
     if search:
         return work_orders_service.search_work_orderss(search, skip, limit)
-    return work_orders_service.get_work_orderss(skip, limit)
+    return work_orders_service.get_work_orderss(skip, limit, user_group=user_group, approve_all=approve_all)
 
 
 # src/api/routes/work_orders_routes.py

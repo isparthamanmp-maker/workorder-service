@@ -31,6 +31,7 @@ class WorkOrdersResponse(BaseModel):
     created_at: Optional[datetime] = None  # Changed from str to datetime
     updated_at: Optional[datetime] = None  # Changed from str to datetime
     status: str = None
+    last_approver: Optional[str] = None  # Name of the last person who approved this WO
     
     model_config = ConfigDict(
         from_attributes=True,
@@ -231,16 +232,30 @@ class WorkOrdersCreateRequest(BaseModel):
         authorizations = self.authorizations  
         authorizations_data = []
         
+        # Map frontend role names to actual DB column values
+        ROLE_MAP = {
+            'prepared_by': 'prepared_by',
+            'department_head': 'dept_head',
+            'dept_head': 'dept_head',
+            'accounting_department': 'verified_by_acc_dept',
+            'business_manager': 'approved_by_bm',
+            'director': 'approved_by_director',
+            'purchasing': 'received_by_purchasing',
+        }
+
         for auth in authorizations:
             person_name = auth.get('name', '').strip()
             date_str = auth.get('date', '').strip()
-            
-            if person_name:
+            frontend_role = auth.get('role', '').strip()
+            auth_type = ROLE_MAP.get(frontend_role, frontend_role)
+
+            # Persist all valid workflow steps, even without an assigned person
+            if auth_type:
                 auth_date = self._parse_date(date_str) if date_str else None
                 
                 authorizations_data.append({
-                    'authorization_type': auth.get('role', ''),
-                    'person_name': person_name,
+                    'authorization_type': auth_type,
+                    'person_name': person_name if person_name else None,
                     'authorization_date': auth_date
                 })
         
@@ -519,12 +534,12 @@ class WorkOrdersUpdateRequest(BaseModel):
                 date_field = date_mapping.get(name_field, "")
                 date_val = self.authorizations.get(date_field, "")
                 
-                if name:
-                    authorizations_list.append({
-                        "role": role,
-                        "name": name,
-                        "date": date_val
-                    })
+                # We always add it now, even if name is empty, to preserve workflow steps
+                authorizations_list.append({
+                    "role": role,
+                    "name": name,
+                    "date": date_val
+                })
         
         print(f"DEBUG: Created {len(authorizations_list)} authorizations")
         
