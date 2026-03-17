@@ -38,35 +38,22 @@ SOURCE_CONFIG = {
 TARGET_TABLE_NAME = 'wor_prod'
 
 SOURCE_QUERY = """
-with data as (
 select p.VendorRefNbr ,p.OrderNbr ,p2.RQReqNbr, p2.RQReqLineNbr,rl.UsrBudgetIndex ,rl.UsrReqOrderNbr ,rl.UsrReqLineNbr ,
 rl2.OrderNbr RQNbr,r.UsrCreatedByDept ,e.Description deptname,r.CreatedByID , u.FullName ,u.Email ,u.Username ,
-rl2.EstExtCost  ,p2.ExtCost ,rl2.EstExtCost -p2.ExtCost balance, rl2.Description,r.CreatedDateTime
+rl2.OrderQty,rl.EstUnitCost,
+rl2.EstExtCost  ,p2.ExtCost ,rl2.EstExtCost -p2.ExtCost balance, rl2.Description	,r.Description rq_desc,r.CreatedDateTime
 from POOrder p
 inner join POLine p2 on p2.OrderNbr =p.OrderNbr and p2.CompanyID =p.CompanyID
-inner join RQRequisitionLine rl on rl.ReqNbr =p2.RQReqNbr and rl.LineNbr =p2.RQReqLineNbr  and rl.CompanyID =p2.CompanyID
-inner join RQRequestLine rl2 on rl2.OrderNbr =rl.UsrReqOrderNbr and rl2.LineNbr =rl.UsrReqLineNbr and rl2.CompanyID =rl.CompanyID
-inner join RQRequest r on r.CompanyID =rl2.CompanyID and r.OrderNbr =rl2.OrderNbr
+left join RQRequisitionLine rl on rl.ReqNbr =p2.RQReqNbr and rl.LineNbr =p2.RQReqLineNbr  and rl.CompanyID =p2.CompanyID
+left join RQRequestLine rl2 on rl2.OrderNbr =rl.UsrReqOrderNbr and rl2.LineNbr =rl.UsrReqLineNbr and rl2.CompanyID =rl.CompanyID
+left join RQRequest r on r.CompanyID =rl2.CompanyID and r.OrderNbr =rl2.OrderNbr
 inner join EPDepartment e on e.CompanyID =r.CompanyID and e.DepartmentID =r.UsrCreatedByDept
 inner join Users u on u.CompanyID =r.CompanyID  and u.PKID =r.CreatedByID
 where p.companyid=3
 and year(p.OrderDate)=2026	
 and rl.UsrBudgetIndex like '%26-%'
-)
-select
-VendorRefNbr as document_number,
-UsrBudgetIndex budget_index,
-UsrReqOrderNbr rq_document_number,
-CreatedDateTime request_date,
-deptname submitted_by,
-sum(EstExtCost) as cost_estimation
-from data
-group by
-VendorRefNbr,
-UsrBudgetIndex,
-UsrReqOrderNbr,
-CreatedDateTime,
-deptname
+and e.Description not in ('ENGINEERING', 'ENGINEER', 'ENG')
+order by p.VendorRefNbr
 """
 
 def get_source_connection():
@@ -111,10 +98,16 @@ def migrate():
         Column('request_date', sqlalchemy_DateTime),
         Column('submitted_by', String(255)),
         Column('cost_estimation', Numeric(18, 2)),
+        Column('rq_line_desc', String(500)),
+        Column('quantity', Numeric(18, 2)),
+        Column('unit_price', Numeric(18, 2)),
+        Column('total_price', Numeric(18, 2)),
+        Column('scope_of_works', String(1000)),
         Column('migrated_at', sqlalchemy_DateTime, server_default=text('CURRENT_TIMESTAMP'))
     )
     
     try:
+        wor_prod.drop(target_engine, checkfirst=True)
         metadata.create_all(target_engine)
         logger.info(f"Verified/Created target table: {TARGET_TABLE_NAME}")
     except Exception as e:
@@ -140,16 +133,56 @@ def migrate():
             logger.info("No data found to migrate.")
             return
 
-        # 4. Insert into Target
-        logger.info(f"Inserting data into {TARGET_TABLE_NAME}...")
+        # 4. Data Transformation
+        logger.info("Applying data conversions...")
+        transformed_data = []
+        for row in data:
+            # Map source columns to target columns
+            item = {
+                'document_number': row.get('VendorRefNbr'),
+                'budget_index': row.get('UsrBudgetIndex'),
+                'rq_document_number': row.get('UsrReqOrderNbr'),
+                'request_date': row.get('CreatedDateTime'),
+                'submitted_by': row.get('deptname'),
+                'cost_estimation': row.get('EstExtCost'), # User said cost_estimation = EstExtCost in previous context, but now we have items.
+                'rq_line_desc': row.get('Description'),
+                'quantity': row.get('OrderQty'),
+                'unit_price': row.get('EstUnitCost'),
+                'total_price': row.get('balance'), # Will be overwritten below
+                'scope_of_works': row.get('rq_desc')
+            }
+
+            # User corrected total_price in mid-convo
+            qty = item['quantity'] or 0
+            price = item['unit_price'] or 0
+            item['total_price'] = float(qty) * float(price)
+
+            # Convert 'Engineering' variants to 'ENG' in submitted_by
+            sub_by = item.get('submitted_by')
+            if sub_by and sub_by.upper() in ['ENGINEERING', 'ENGINEER', 'ENG']:
+                item['submitted_by'] = 'ENG'
+            
+            # Convert 'ENGINEERING' or 'ENGINEER' variants to 'ENG' in document_number
+            doc_num = item.get('document_number')
+            if doc_num:
+                # Replace ENGINEERING first (longer match) then ENGINEER
+                new_doc_num = doc_num.replace('ENGINEERING', 'ENG').replace('Engineering', 'ENG')
+                new_doc_num = new_doc_num.replace('ENGINEER', 'ENG').replace('Engineer', 'ENG')
+                new_doc_num = new_doc_num.replace('WOR.ENG', 'WOR/ENG')
+                item['document_number'] = new_doc_num
+            
+            transformed_data.append(item)
+
+        # 5. Insert into Target
+        logger.info(f"Truncating and inserting data into {TARGET_TABLE_NAME}...")
         
-        # Prepare data for insertion (handling types if necessary)
-        # SQLAlchemy handles dict insertion easily
         with target_engine.begin() as conn:
-            # We can use the table object for insertion
-            # To avoid duplicates if needed, we might want to check items, 
-            # but usually migration is a fresh batch.
-            conn.execute(wor_prod.insert(), data)
+            # Truncate the table first
+            conn.execute(text(f"TRUNCATE TABLE {TARGET_TABLE_NAME}"))
+            logger.info(f"Table {TARGET_TABLE_NAME} truncated.")
+            
+            # Insert the new data
+            conn.execute(wor_prod.insert(), transformed_data)
             
         logger.info("Migration completed successfully.")
 
