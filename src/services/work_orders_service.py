@@ -13,7 +13,7 @@ import binascii
 from minio import Minio
 from minio.error import S3Error
 import base64 
-from sqlalchemy import extract
+from sqlalchemy import extract, text
 
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
@@ -921,6 +921,12 @@ class WorkOrdersService:
             
             # --- DELETE DATABASE RECORDS ---
             
+            # Delete work_order_file_comments first due to foreign key constraint
+            self.db.execute(
+                text("DELETE FROM work_order_file_comments WHERE work_order_file_id IN (SELECT id FROM work_order_files WHERE work_order_id = :wo_id)"),
+                {"wo_id": work_orders_id}
+            )
+
             # Delete work_order_files
             self.db.query(WorkOrderFiles).filter(
                 WorkOrderFiles.work_order_id == work_orders_id
