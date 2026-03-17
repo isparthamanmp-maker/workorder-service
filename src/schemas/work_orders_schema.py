@@ -167,9 +167,9 @@ class WorkOrdersCreateRequest(BaseModel):
             'cost_type': form_data.get('costType', 'CAPEX'),
             'budget_index': form_data.get('budgetIndex', '').strip(),
             'budget_name': form_data.get('budgetName', '').strip(),
-            'cost_estimation': float(form_data.get('costEstimation', 0)) or float(self.totalCost),
-            'remaining_budget': float(form_data.get('remainingBudget', 0)),
-        'under_over': float(form_data.get('underOver', 0)),
+            'cost_estimation': float(form_data.get('costEstimation') or 0) or float(self.totalCost or 0),
+            'remaining_budget': float(form_data.get('remainingBudget') or 0),
+            'under_over': float(form_data.get('underOver') or 0),
             'charge_to_tenant': 1 if form_data.get('chargeToTenant', False) else 0,
         'recommended_contractor': form_data.get('recommendedContractor', '').strip(),
         'reason': form_data.get('reason', '').strip(),
@@ -188,9 +188,9 @@ class WorkOrdersCreateRequest(BaseModel):
         for idx, item in enumerate(work_items):
             items_data.append({
                 'description': item.get('description', ''),
-                'quantity': float(item.get('quantity', 1)),
-                'unit_price': float(item.get('unitPrice', 0)),
-                'total_price': float(item.get('quantity', 1)) * float(item.get('unitPrice', 0)),
+                'quantity': float(item.get('quantity') or 1),
+                'unit_price': float(item.get('unitPrice') or 0),
+                'total_price': float(item.get('quantity') or 1) * float(item.get('unitPrice') or 0),
                 'item_order': idx + 1
             })
         
@@ -416,8 +416,8 @@ class WorkOrdersUpdateRequest(BaseModel):
             "costType": self.workOrder.get("costType", "CAPEX"),
             "budgetIndex": self.workOrder.get("budgetIndex", ""),
             "budgetName": self.workOrder.get("budgetName", ""),
-            "costEstimation": float(self.workOrder.get("costEstimation", 0)),
-            "budgetRemaining": float(self.workOrder.get("remainingBudget", 0)),
+            "costEstimation": float(self.workOrder.get("costEstimation") or 0),
+            "budgetRemaining": float(self.workOrder.get("remainingBudget") or 0),
             "under_over": self.workOrder.get("underOver", ""),
             "chargeToTenant": bool(self.workOrder.get("chargeToTenant", False)),
             "recommended_contractor": self.workOrder.get("recommendedContractor", ""),
@@ -433,8 +433,8 @@ class WorkOrdersUpdateRequest(BaseModel):
         for idx, item in enumerate(self.workItems):
             work_items_list.append({
                 "description": item.get("description", ""),
-                "quantity": float(item.get("quantity", 1)),
-                "unitPrice": float(item.get("unitPrice", 0))
+                "quantity": float(item.get("quantity") or 1),
+                "unitPrice": float(item.get("unitPrice") or 0)
             })
         
         print(f"DEBUG: Created {len(work_items_list)} work items")
@@ -566,8 +566,8 @@ class WorkOrdersUpdateRequest(BaseModel):
                         "id": budget_entry.get("id", 0),
                         "budgetIndex": budget_entry.get("budgetIndex", ""),
                         "budgetName": budget_entry.get("budgetName", ""),
-                        "costEstimation": float(budget_entry.get("costEstimation", 0)),
-                        "budgetRemaining": float(budget_entry.get("budgetRemaining", 0)),
+                        "costEstimation": float(budget_entry.get("costEstimation") or 0),
+                        "budgetRemaining": float(budget_entry.get("budgetRemaining") or 0),
                         "underOver": budget_entry.get("underOver", ""),
                         "entryOrder": budget_entry.get("entryOrder", 0),
                         "isSelected": bool(budget_entry.get("isSelected", False))

@@ -204,7 +204,7 @@ class WorkOrdersService:
                         "budget_index": budget_entry.get('budgetIndex', work_order.budget_index),
                         "refid": work_order.id,
                         "refnum": work_order.document_number,
-                        "refvalue": float(budget_entry.get('costEstimation', 0)),
+                        "refvalue": float(budget_entry.get('costEstimation') or 0),
                         "created_by": "Ketut Sakho Parthama"
                     })
                     headers = {
@@ -285,8 +285,8 @@ class WorkOrdersService:
                 'work_order_id': work_order_id,
                 'budget_index': entry.get('budgetIndex', ''),
                 'budget_name': entry.get('budgetName', ''),
-                'cost_estimation': float(entry.get('costEstimation', 0)),
-                'budget_remaining': float(entry.get('budgetRemaining', entry.get('budgetRemaining', 0))),
+                'cost_estimation': float(entry.get('costEstimation') or 0),
+                'budget_remaining': float(entry.get('budgetRemaining') or 0),
                 'under_over': entry.get('underOver', ''),
                 'entry_order': entry.get('entryOrder', idx + 1),
                 'is_selected': bool(entry.get('isSelected', False))
@@ -448,8 +448,8 @@ class WorkOrdersService:
                 "costType": work_order.cost_type,
                 "budgetIndex": work_order.budget_index,
                 "budgetName": work_order.budget_name,
-                "costEstimation": float(work_order.cost_estimation) if work_order.cost_estimation else None,
-                "remainingBudget": float(work_order.remaining_budget) if work_order.remaining_budget else None,
+                "costEstimation": float(work_order.cost_estimation or 0),
+                "remainingBudget": float(work_order.remaining_budget or 0),
                 "underOver": work_order.under_over,
                 "chargeToTenant": bool(work_order.charge_to_tenant),
                 "recommendedContractor": work_order.recommended_contractor,
@@ -465,9 +465,9 @@ class WorkOrdersService:
                     "id": item.id,
                     "workOrderId": item.work_order_id,
                     "description": item.description,
-                    "quantity": float(item.quantity) if item.quantity else None,
-                    "unitPrice": float(item.unit_price) if item.unit_price else None,
-                    "totalPrice": float(item.total_price) if item.total_price else None,
+                    "quantity": float(item.quantity or 0),
+                    "unitPrice": float(item.unit_price or 0),
+                    "totalPrice": float(item.total_price or 0),
                     "itemOrder": item.item_order
                 }
                 for item in work_order.work_items
@@ -486,8 +486,8 @@ class WorkOrdersService:
                     "workOrderId": budget.work_order_id,
                     "budgetIndex": budget.budget_index,
                     "budgetName": budget.budget_name,
-                    "costEstimation": float(budget.cost_estimation) if budget.cost_estimation else None,
-                    "budgetRemaining": float(budget.budget_remaining) if budget.budget_remaining else None,
+                    "costEstimation": float(budget.cost_estimation or 0),
+                    "budgetRemaining": float(budget.budget_remaining or 0),
                     "underOver": budget.under_over,
                     "entryOrder": budget.entry_order,
                     "isSelected": bool(budget.is_selected)
@@ -527,7 +527,7 @@ class WorkOrdersService:
             ],
             'authorizations': [self._format_authorizations_response(work_order.authorizations)],
             "totalCost": float(sum(
-                item.quantity * item.unit_price 
+                (item.quantity or 0) * (item.unit_price or 0) 
                 for item in work_order.work_items
             ))
         }
@@ -1357,9 +1357,9 @@ class WorkOrdersService:
             table_data = [['Description', 'Qty', 'Unit Price', 'Total']]
             
             for item in work_items:
-                quantity = float(item.get('quantity', 0)) if item.get('quantity') else 0
-                unit_price = float(item.get('unitPrice', 0)) if item.get('unitPrice') else 0
-                total_price = float(item.get('totalPrice', quantity * unit_price))
+                quantity = float(item.get('quantity') or 0)
+                unit_price = float(item.get('unitPrice') or 0)
+                total_price = float(item.get('totalPrice') or (quantity * unit_price))
                 
                 # Wrap description in Paragraph for text wrapping
                 desc_text = item.get('description', '')
@@ -1447,9 +1447,12 @@ class WorkOrdersService:
                 total_under_over = 0
                 
                 for idx, entry in enumerate(selected_budgets, 1):
-                    cost_est = float(entry.get('costEstimation', 0))
-                    remaining = float(entry.get('budgetRemaining', 0))
-                    under_over = float(entry.get('underOver', 0))
+                    cost_est = float(entry.get('costEstimation') or 0)
+                    remaining = float(entry.get('budgetRemaining') or 0)
+                    try:
+                        under_over = float(entry.get('underOver') or 0)
+                    except (ValueError, TypeError):
+                        under_over = 0
                     
                     total_cost_est += cost_est
                     total_remaining += remaining
