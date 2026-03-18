@@ -345,6 +345,9 @@ class WorkOrdersFullResponse(BaseModel):
     attachments: List[dict] = Field(default_factory=list)  # Optional with default
     authorizations: List[dict] = Field(default_factory=list)  # Optional with default
     budgetEntries: List[dict] = Field(default_factory=list)  # Add this line
+    history: List[Dict[str, Any]] = Field(default_factory=list)
+    latestRemark: Optional[str] = None
+    latestRemarkMetadata: Optional[Dict[str, Any]] = None
     class Config:
         from_attributes = True
 

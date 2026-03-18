@@ -160,6 +160,7 @@ class WorkOrdersHistory(Base):
     refvalue = Column(Numeric(15, 2), nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     created_by = Column(String(100), nullable=True)
+    remarks = Column(Text, nullable=True)
 
     def __repr__(self):
         return f"<WorkOrdersHistory(id={self.id}, refnum='{self.refnum}', status='{self.status}')>"

@@ -1,6 +1,6 @@
 from typing import List, Optional, Dict, Any, Tuple  # Add Tuple here
 from sqlalchemy.orm import Session
-from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors, SupportingDocuments, Authorizations, WorkOrderFiles, WorkOrderBudgets
+from src.models.base import WorkOrders, WorkOrderItems, WorkOrderVendors, SupportingDocuments, Authorizations, WorkOrderFiles, WorkOrderBudgets, WorkOrdersHistory
 from src.schemas.work_orders_schema import WorkOrdersCreate, WorkOrdersUpdate, WorkOrdersCreateRequest
 from fastapi import HTTPException
 from sqlalchemy.orm import joinedload
@@ -430,6 +430,14 @@ class WorkOrdersService:
         
         if not work_order:
             return None
+
+        # Get history
+        history = (
+            self.db.query(WorkOrdersHistory)
+            .filter(WorkOrdersHistory.refid == work_orders_id)
+            .order_by(WorkOrdersHistory.created_at.desc())
+            .all()
+        )
         
         # Build response matching POST request structure PLUS id at root
         response = {
@@ -529,7 +537,26 @@ class WorkOrdersService:
             "totalCost": float(sum(
                 (item.quantity or 0) * (item.unit_price or 0) 
                 for item in work_order.work_items
-            ))
+            )),
+            "history": [
+                {
+                    "id": h.id,
+                    "userGroup": h.UserGroup,
+                    "status": h.status,
+                    "remarks": h.remarks,
+                    "createdAt": h.created_at.isoformat() if h.created_at else None,
+                    "createdBy": h.created_by
+                }
+                for h in history
+            ],
+            "latestRemark": next((h.remarks for h in history if h.remarks), None),
+            "latestRemarkMetadata": next((
+                {
+                    "createdBy": h.created_by,
+                    "createdAt": h.created_at.isoformat() if h.created_at else None
+                } 
+                for h in history if h.remarks
+            ), None)
         }
         
         return response

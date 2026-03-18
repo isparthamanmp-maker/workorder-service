@@ -14,6 +14,7 @@ class WorkOrdersHistoryResponse(BaseModel):
     refvalue: Optional[float] = None
     created_at: Optional[datetime] = None  # Use datetime type
     created_by: Optional[str] = None
+    remarks: Optional[str] = None
     
     model_config = ConfigDict(
         from_attributes=True,
@@ -30,6 +31,7 @@ class WorkOrdersHistoryCreate(BaseModel):
     refnum: str = Field(..., max_length=100)
     refvalue: Optional[float] = Field(None)
     created_by: Optional[str] = Field(None, max_length=100)
+    remarks: Optional[str] = Field(None)
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,6 +45,7 @@ class WorkOrdersHistoryUpdate(BaseModel):
     refnum: Optional[str] = Field(None, max_length=100)
     refvalue: Optional[float] = None
     created_by: Optional[str] = Field(None, max_length=100)
+    remarks: Optional[str] = Field(None)
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -60,6 +63,7 @@ class WorkOrdersHistoryResponseAlt(BaseModel):
     refvalue: Optional[float] = None
     created_at: str = None
     created_by: Optional[str] = None
+    remarks: Optional[str] = None
     
     model_config = ConfigDict(
         from_attributes=True,

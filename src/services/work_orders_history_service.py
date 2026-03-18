@@ -37,6 +37,16 @@ class WorkOrdersHistoryService:
                     # Optionally, update the updated_at timestamp
                     work_order.updated_at = datetime.datetime.now()
 
+                    # Reset approval chain if status is 'Submit'
+                    if work_orders_history.status == 'Submit':
+                        authorizations_to_reset = self.db.query(Authorizations).filter(
+                            Authorizations.work_order_id == work_order.id
+                        ).all()
+                        for auth in authorizations_to_reset:
+                            if auth.authorization_type != 'prepared_by':
+                                auth.person_name = None
+                                auth.authorization_date = None
+
                     # 'prepared_by': ('preparedBy', 'preparedDate'),
                     # 'dept_head': ('deptHeadName', 'deptHeadDate'),
                     # 'verified_by_acc_dept': ('accDeptName', 'accDeptDate'),
