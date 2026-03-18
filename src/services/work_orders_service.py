@@ -514,7 +514,8 @@ class WorkOrdersService:
                             'fileName': file.file_name,
                             'fileUrl': file.file_url,
                             'fileSize': file.file_size,
-                            'uploadDate': file.upload_date.isoformat() if file.upload_date else None
+                            'uploadDate': file.upload_date.isoformat() if file.upload_date else None,
+                            'remarks': file.remarks
                         }
                         for file in doc.files
                     ]
@@ -529,7 +530,8 @@ class WorkOrdersService:
                     'fileName': file.file_name,
                     'fileUrl': file.file_url,
                     'fileSize': file.file_size,
-                    'uploadDate': file.upload_date.isoformat() if file.upload_date else None
+                    'uploadDate': file.upload_date.isoformat() if file.upload_date else None,
+                    'remarks': file.remarks
                 }
                 for file in work_order.files
             ],
@@ -1766,7 +1768,8 @@ class WorkOrdersService:
                 c.save()
                 buffer.seek(0)
                 return buffer
-                
+
+
         except Exception as e:
             print(f"Error converting to PDF: {e}")
             
@@ -1778,3 +1781,14 @@ class WorkOrdersService:
             c.save()
             buffer.seek(0)
             return buffer
+
+    def update_file_remarks(self, file_id: int, remarks: Optional[str] = None) -> bool:
+        """Update remarks for a specific file"""
+        from src.models.base import WorkOrderFiles
+        file = self.db.query(WorkOrderFiles).filter(WorkOrderFiles.id == file_id).first()
+        if not file:
+            return False
+        
+        file.remarks = remarks
+        self.db.commit()
+        return True

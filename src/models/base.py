@@ -132,6 +132,7 @@ class WorkOrderFiles(Base):
     file_url = Column(String(500), nullable=False)  # MinIO URL
     file_size = Column(Integer, nullable=True)  # Size in bytes
     upload_date = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+    remarks = Column(Text, nullable=True)
     
     # Relationships - using string references to avoid circular imports
     work_order = relationship("WorkOrders", back_populates="files")

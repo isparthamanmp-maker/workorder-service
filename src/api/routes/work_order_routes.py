@@ -340,3 +340,16 @@ def debug_update_work_order(
         print(f"Error parsing attachments: {e}")
     
     return {"message": "Debug info printed to console"}
+
+@router.put("/files/{file_id}/remarks", status_code=status.HTTP_200_OK)
+def update_file_remarks(
+    file_id: int = Path(..., ge=1, description="File ID"),
+    remarks_data: dict = None, # Simple dict to handle flexible input
+    work_orders_service: WorkOrdersService = Depends(get_work_orders_service)
+):
+    """Update remarks for a specific file"""
+    remarks = remarks_data.get("remarks") if remarks_data else None
+    if work_orders_service.update_file_remarks(file_id, remarks):
+        return {"message": "File remarks updated successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="File not found")

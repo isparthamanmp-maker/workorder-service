@@ -351,6 +351,8 @@ class WorkOrdersFullResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class FileRemarksUpdate(BaseModel):
+    remarks: Optional[str] = None
 
 # src/schemas/work_orders_schema.py
 # Add these schemas at the bottom of the file
